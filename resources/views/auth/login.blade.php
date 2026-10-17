@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign In — Budgetra</title>
+    <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    {{-- Versioned like the app layouts: without it the browser serves whatever
+     copy of style.css it already had, and every change to this page's styling
+     needs a hard refresh before anyone sees it. --}}
+<link rel="stylesheet" href="{{ asset('css/style.css') }}?v={{ filemtime(public_path('css/style.css')) }}">
+</head>
+<body style="margin:0;padding:0;">
+
+<div class="auth-wrapper">
+    {{-- Left panel --}}
+    <div class="auth-panel-left" style="position:relative;overflow:hidden;order:2;">
+        <div style="position:absolute;inset:0;background-image:url('{{ asset('stockimages/loginsidebar.jpg') }}');background-size:cover;background-position:center;filter:blur(3px);transform:scale(1.05);"></div>
+        <div style="position:absolute;inset:0;background:rgba(0,0,0,.25);"></div>
+        <div style="position:relative;z-index:2;height:100%;display:flex;align-items:center;justify-content:center;">
+            {{-- budgetraicon.png is a black line mark on transparency, and this panel
+                 is a blurred photo under a dark scrim — so it is painted white
+                 rather than dropped in as-is. See .brand-mark. --}}
+            <img src="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}"
+                 alt="Budgetra" class="brand-mark" style="max-width:200px;width:60%;">
+        </div>
+    </div>
+
+    {{-- Right panel --}}
+    <div class="auth-panel-right" style="order:1;">
+        <div class="auth-form-wrap">
+            <h1 class="auth-title">Welcome Back!</h1>
+
+            {{-- No summary banner, same as Create an Account. Both of the
+                 errors this form can raise — a bad sign-in and a suspended
+                 account — are attached to 'email', so they print under that
+                 field; the banner only said it a second time. --}}
+            <form method="POST" action="{{ route('login') }}">
+                @csrf
+
+                <div class="form-group">
+                    <label class="form-label" for="email">Email Address</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon"><i class="fa-regular fa-envelope"></i></span>
+                        <input id="email" type="email" name="email"
+                               value="{{ old('email') }}"
+                               class="form-control {{ $errors->has('email') ? 'is-invalid' : '' }}"
+                               placeholder="" required autofocus>
+                    </div>
+                    @error('email')<div class="error">{{ $message }}</div>@enderror
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="password">Password</label>
+                    <div class="input-wrapper">
+                        <span class="input-icon"><i class="fa-solid fa-lock"></i></span>
+                        <input id="password" type="password" name="password"
+                               class="form-control {{ $errors->has('password') ? 'is-invalid' : '' }}"
+                               placeholder="" required>
+                        <span class="input-suffix" id="togglePwd" style="cursor:pointer;">
+                            <i class="fa-regular fa-eye" id="eyeIcon"></i>
+                        </span>
+                    </div>
+                    @error('password')<div class="error">{{ $message }}</div>@enderror
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-lg btn-block" data-busy-label="Signing in…">
+                    Sign In &nbsp;
+                </button>
+            </form>
+
+            <div class="auth-footer-text">
+                Don't have an account? <a href="{{ route('register') }}">Create one</a>
+            </div>
+
+            <div style="text-align:center;margin-top:32px;font-size:12px;color:var(--muted);">
+                © {{ date('Y') }} Budgetra. Smart travel, smarter spending.
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ asset('js/auth-form.js') }}?v={{ filemtime(public_path('js/auth-form.js')) }}"></script>
+<script>
+document.getElementById('togglePwd').addEventListener('click', function () {
+    var pwd  = document.getElementById('password');
+    var icon = document.getElementById('eyeIcon');
+    if (pwd.type === 'password') {
+        pwd.type = 'text';
+        icon.className = 'fa-regular fa-eye-slash';
+    } else {
+        pwd.type = 'password';
+        icon.className = 'fa-regular fa-eye';
+    }
+});
+</script>
+
+</body>
+</html>

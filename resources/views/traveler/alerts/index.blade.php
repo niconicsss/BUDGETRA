@@ -1,0 +1,188 @@
+@extends('layouts.app')
+@section('title', 'Notifications')
+@push('styles')
+<style>
+    /* While the list fits, the card is content-height and there is no free
+       space here to grow into, so this sits at its natural size and shows no
+       scrollbar. Once the card is shrunk to the viewport, flex:1 hands this
+       whatever is left under the header and min-height:0 lets it shrink far
+       enough to actually scroll rather than pushing the card open again. */
+    .notif-scroll {
+        flex: 1; min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+    }
+    /* Same slim thumb as .dash-main, so the card looks unchanged until there
+       is actually something to scroll. */
+    .notif-scroll::-webkit-scrollbar { width: 6px; }
+    .notif-scroll::-webkit-scrollbar-track { background: transparent; }
+    .notif-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .notif-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+    .notif-scroll { scrollbar-color: var(--border) transparent; }
+</style>
+@endpush
+
+@section('content')
+
+
+@php
+    $unreadCount  = $notifications->getCollection()->where('is_read', false)->count();
+    $hasAny       = $notifications->getCollection()->isNotEmpty();
+@endphp
+
+@if (session('success'))
+<div class="alert alert-success mb-16" style="flex-shrink:0;">{{ session('success') }}</div>
+@endif
+
+{{-- No trips *and* nothing to read. A traveller with notifications but no
+     trips of their own (e.g. just added to someone's group trip) sees the
+     notifications, not the "plan your first trip" prompt. --}}
+@if ($trips->isEmpty() && !$hasAny)
+@php $alNeedsProfile = ! auth()->user()?->userProfile; @endphp
+<div class="empty-state-center" style="min-height:80vh;">
+    <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
+        <x-nav-icon icon="notifications" style="font-size:28px;color:#fff;" />
+    </div>
+    @if ($alNeedsProfile)
+    <div class="empty-state-swap" data-empty-when="profile">
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">Set up your profile first</h2>
+        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Complete your travel profile before planning a trip and receiving budget alerts.</p>
+        <a href="{{ route('profile.setup') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-user"></i> Set Up Your Profile First
+        </a>
+        {{-- Swaps in the "plan a trip" prompt below — on every tab, and for
+             good, until the profile is actually created. See
+             budgetraSkipProfileSetup() in layouts/app.blade.php. --}}
+        <button type="button" class="empty-state-skip" onclick="budgetraSkipProfileSetup()">Skip for now</button>
+    </div>
+    @endif
+    <div class="empty-state-swap" @if ($alNeedsProfile) data-empty-when="skipped" @endif>
+        <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">No notifications yet</h2>
+        <p style="color:var(--muted);margin-bottom:28px;font-size:14px;max-width:320px;line-height:1.6;">Plan a trip first to start receiving budget alerts and notifications.</p>
+        <a href="{{ route('trips.plan') }}" style="display:inline-flex;align-items:center;gap:10px;background:var(--primary);color:#fff;border-radius:30px;padding:14px 32px;font-size:13px;font-weight:700;letter-spacing:.06em;text-decoration:none;text-transform:uppercase;">
+            <i class="fa-solid fa-plane"></i> Plan Your First Trip
+        </a>
+    </div>
+</div>
+
+@elseif (!$hasAny)
+{{-- Has trips but no notifications --}}
+<div class="empty-state-center" style="min-height:80vh;">
+    <div style="width:64px;height:64px;border-radius:16px;background:var(--primary);display:flex;align-items:center;justify-content:center;margin-bottom:24px;">
+        <x-nav-icon icon="notifications" style="font-size:28px;color:#fff;" />
+    </div>
+    <h2 style="font-weight:700;font-size:22px;margin-bottom:10px;color:var(--dark);">All caught up!</h2>
+    <p style="color:var(--muted);font-size:14px;max-width:320px;line-height:1.6;">
+        No notifications yet. We'll alert you when your budget needs attention.
+    </p>
+</div>
+
+@else
+@php
+    $grouped = $notifications->getCollection()->groupBy(fn ($n) => $n->created_at->isToday() ? 'Today' : 'Earlier');
+@endphp
+
+
+{{-- Notifications card --}}
+{{-- Hugs a short list, stretches only once there is too much to fit. That is
+     flex-shrink, not flex-grow: no grow means the card sizes to its content
+     and leaves the space below it alone, while min-height:0 lets .dash-content
+     (a flex column of definite height) shrink it back down when the rows would
+     otherwise run past the bottom of the viewport. The list inside then takes
+     the remaining height and scrolls. --}}
+<div x-data="{ tab: 'all' }" style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;overflow:hidden;box-sizing:border-box;display:flex;flex-direction:column;min-height:0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:1px solid var(--border);flex-shrink:0;">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:14px;font-weight:700;color:var(--dark);">Notifications</span>
+            <div style="display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:2px;">
+                <button type="button" @click="tab = 'all'"
+                        :style="(tab === 'all' ? 'background:var(--bg-white);color:var(--dark);' : 'background:none;color:var(--muted);') + 'font-size:12px;font-weight:600;padding:4px 12px;border-radius:6px;border:none;cursor:pointer;'">All</button>
+                <button type="button" @click="tab = 'unread'"
+                        :style="(tab === 'unread' ? 'background:var(--bg-white);color:var(--dark);' : 'background:none;color:var(--muted);') + 'font-size:12px;font-weight:600;padding:4px 12px;border-radius:6px;border:none;cursor:pointer;'">Unread</button>
+            </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+            @if ($unreadCount > 0)
+            <span style="padding:3px 10px;border-radius:99px;background:var(--primary);color:#fff;font-size:11px;font-weight:700;">{{ $unreadCount }} unread</span>
+            @endif
+            <form method="POST" action="{{ route('notifications.read-all') }}">
+                @csrf @method('PATCH')
+                <button class="btn btn-outline btn-sm" type="submit" {{ $unreadCount === 0 ? 'disabled' : '' }}>
+                    <i class="fa-solid fa-check-double"></i> Mark all as read
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {{-- The list scrolls, the header above it does not. The card was
+         already flex-column with a flex-shrink:0 header, but nothing
+         bounded the rows, so 20 notifications a page ran off the bottom
+         of the viewport. Capped rather than fixed-height, so a short list
+         still sizes to its content and never shows a scrollbar. --}}
+    <div class="notif-scroll">
+    @if ($unreadCount === 0)
+    <div x-show="tab === 'unread'" style="box-sizing:border-box;text-align:center;padding:56px 20px;">
+        <div style="width:48px;height:48px;border-radius:50%;background:var(--bg);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+            <i class="fa-solid fa-bell-slash" style="font-size:18px;color:var(--muted);"></i>
+        </div>
+        <p style="margin:0;font-size:13.5px;font-weight:600;color:var(--dark);">No unread notifications</p>
+        <p style="margin:4px 0 0;font-size:12.5px;color:var(--muted);">You're all caught up!</p>
+    </div>
+    @endif
+
+    @foreach ($grouped as $groupLabel => $groupNotifs)
+    @php $groupHasUnread = $groupNotifs->contains(fn ($n) => !$n->is_read); @endphp
+    <div x-show="tab === 'all' || {{ $groupHasUnread ? 'true' : 'false' }}"
+         style="padding:8px 20px 4px;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;{{ !$loop->first ? 'border-top:1px solid var(--border);' : '' }}">
+        {{ $groupLabel }}
+    </div>
+    @foreach ($groupNotifs as $notif)
+    {{-- Title, icon and tile colours per type, shared with the dashboard's
+         attention panel so one type is never named two different things. --}}
+    @php $meta = notification_meta($notif->type); @endphp
+    <div x-show="tab === 'all' || {{ $notif->is_read ? 'false' : 'true' }}"
+         style="position:relative;{{ !$loop->last ? 'border-bottom:1px solid var(--border);' : '' }}">
+        @if (!$notif->is_read)
+        <form method="POST" action="{{ route('notifications.read', $notif) }}" style="margin:0;">
+            @csrf @method('PATCH')
+            <button type="submit" style="display:grid;grid-template-columns:28px 1fr;column-gap:10px;width:100%;padding:14px 20px;background:none;border:none;text-align:left;cursor:pointer;font-family:inherit;transition:background .15s;"
+                    onmouseenter="this.style.background='var(--bg)'" onmouseleave="this.style.background='none'">
+                <span style="grid-column:1;width:28px;height:28px;border-radius:50%;background:{{ $meta['bg'] }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fa-solid {{ $meta['icon'] }}" style="color:{{ $meta['fg'] }};font-size:12px;"></i>
+                </span>
+                <span style="grid-column:2;min-width:0;">
+                    <span style="display:block;font-size:14px;font-weight:700;color:var(--dark);line-height:1.3;">{{ $meta['title'] }}</span>
+                    <span style="display:block;margin-top:3px;font-size:12.5px;color:var(--muted);line-height:1.4;">
+                        {{ $notif->message }}
+                    </span>
+                    <span style="display:block;margin-top:5px;font-size:11.5px;color:var(--muted);opacity:.75;">{{ $notif->created_at->diffForHumans() }}</span>
+                </span>
+            </button>
+        </form>
+        @else
+        <div style="display:grid;grid-template-columns:28px 1fr;column-gap:10px;padding:14px 20px;">
+            <div style="grid-column:1;width:28px;height:28px;border-radius:50%;background:{{ $meta['bg'] }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <i class="fa-solid {{ $meta['icon'] }}" style="color:{{ $meta['fg'] }};font-size:12px;"></i>
+            </div>
+            <div style="grid-column:2;min-width:0;">
+                <p style="margin:0;font-size:14px;font-weight:700;color:var(--dark);line-height:1.3;">{{ $meta['title'] }}</p>
+                <p style="margin:3px 0 0;font-size:12.5px;color:var(--muted);line-height:1.4;">
+                    {{ $notif->message }}
+                </p>
+                <p style="margin:5px 0 0;font-size:11.5px;color:var(--muted);opacity:.75;">{{ $notif->created_at->diffForHumans() }}</p>
+            </div>
+        </div>
+        @endif
+    </div>
+    @endforeach
+    @endforeach
+    </div>
+</div>
+
+@if ($notifications->hasPages())
+<div class="mt-24" style="flex-shrink:0;">{{ $notifications->links() }}</div>
+@endif
+
+@endif
+
+@endsection
