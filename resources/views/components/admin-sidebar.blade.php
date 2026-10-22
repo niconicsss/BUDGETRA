@@ -10,12 +10,13 @@
 
     <div class="admin-sidebar-header">
         <button class="admin-sidebar-toggle-btn" id="adminSidebarToggle" title="Toggle sidebar">
-            <i class="fa-solid fa-angle-left" id="adminSidebarToggleIcon"></i>
+            <i class="fa-solid fa-angle-left" id="adminSidebarToggleIcon" style="color: white;"></i>
         </button>
     </div>
 
     <div class="admin-sidebar-brand">
-        <img src="{{ asset('systemicons/budgetra.jpg') }}" alt="Budgetra" class="admin-sidebar-logo">
+        <!-- Added admin-sidebar-logo-img class to apply the white filter to the logo -->
+        <img src="{{ asset('systemicons/budgetraicon.png') }}" alt="Budgetra" class="admin-sidebar-logo admin-sidebar-logo-img">
         <div class="admin-sidebar-brand-text">
             <div class="admin-sidebar-name">Budgetra</div>
         </div>
@@ -25,51 +26,79 @@
     <nav class="admin-sidebar-nav">
         @php
         $primaryLinks = [
-            ['href' => route('admin.dashboard'),          'icon' => 'fa-solid fa-house',              'label' => 'Dashboard',      'key' => 'dashboard'],
-            ['href' => route('admin.users.index'),         'icon' => 'fa-solid fa-users',              'label' => 'User Accounts',  'key' => 'users'],
-            ['href' => route('admin.destinations.index'),  'icon' => 'fa-solid fa-compass',            'label' => 'Destinations',   'key' => 'destinations'],
-            ['href' => route('admin.attractions.index'),   'icon' => 'fa-solid fa-map-location-dot',   'label' => 'Attractions',    'key' => 'attractions'],
-            ['href' => route('admin.travel-costs.index'),  'icon' => 'fa-solid fa-sack-dollar',        'label' => 'Travel Costs',   'key' => 'travel-costs'],
-            ['href' => route('admin.reviews.index'),       'icon' => 'fa-regular fa-flag',             'label' => 'User Reviews',   'key' => 'reviews'],
+            ['href' => route('admin.dashboard'),          'icon_file' => 'dashboard.png',      'label' => 'Dashboard',      'key' => 'dashboard'],
+            ['href' => route('admin.users.index'),        'icon_file' => 'user-accounts.png',  'label' => 'User Accounts',  'key' => 'users'],
+            ['href' => route('admin.destinations.index'), 'icon_file' => 'destinations.png',   'label' => 'Destinations',   'key' => 'destinations'],
+            ['href' => route('admin.attractions.index'),  'icon_file' => 'attractions.png',    'label' => 'Attractions',    'key' => 'attractions'],
+            ['href' => route('admin.travel-costs.index'), 'icon_file' => 'travel-costs.png',   'label' => 'Travel Costs',   'key' => 'travel-costs'],
+            ['href' => route('admin.reviews.index'),      'icon_file' => 'user-reviews.png',   'label' => 'User Reviews',   'key' => 'reviews'],
         ];
         @endphp
+        
         <div class="admin-sidebar-primary">
             @foreach ($primaryLinks as $link)
             <a href="{{ $link['href'] }}" class="admin-sidebar-link {{ $active === $link['key'] ? 'active' : '' }}" title="{{ $link['label'] }}">
-                <i class="{{ $link['icon'] }}"></i>
-                <span>{{ $link['label'] }}</span>
+                <img src="{{ asset('systemicons/' . $link['icon_file']) }}" alt="{{ $link['label'] }} Icon" class="admin-sidebar-icon">
+                <span class="admin-sidebar-label">{{ $link['label'] }}</span>
             </a>
             @endforeach
         </div>
 
         <div class="admin-sidebar-foot">
             <div class="admin-sidebar-divider"></div>
-            {{-- Not route('profile.edit') — that one is inside the traveler
-                 group, gated by the not-admin middleware, so an admin
-                 clicking it got bounced straight back to the overview. --}}
+            
             <a href="{{ route('admin.profile.edit') }}" class="admin-sidebar-link {{ $active === 'profile' ? 'active' : '' }}" title="Profile">
                 @if (auth()->user()?->profile_photo)
+                <!-- Bypassed the filter here so the user's actual profile photo doesn't turn white -->
                 <img src="{{ Illuminate\Support\Facades\Storage::url(auth()->user()->profile_photo) }}"
-                     alt="Profile" class="admin-sidebar-avatar">
+                     alt="Profile" class="admin-sidebar-avatar" style="width:20px; height:20px; border-radius:50%; object-fit:cover;">
                 @else
-                <span class="admin-sidebar-avatar admin-sidebar-avatar-initials">{{ $profileInitials }}</span>
+                <span class="admin-sidebar-avatar admin-sidebar-avatar-initials" style="width:20px; height:20px; display:inline-block; text-align:center;">{{ $profileInitials }}</span>
                 @endif
-                <span>Profile</span>
+                <span class="admin-sidebar-label">Profile</span>
             </a>
+            
             <a href="{{ route('admin.settings.index') }}" class="admin-sidebar-link {{ $active === 'settings' ? 'active' : '' }}" title="Settings">
-                <i class="fa-solid fa-gear"></i>
-                <span>Settings</span>
+                <img src="{{ asset('systemicons/settings.png') }}" alt="Settings Icon" class="admin-sidebar-icon">
+                <span class="admin-sidebar-label">Settings</span>
             </a>
+            
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
-                <button type="submit" class="admin-sidebar-link admin-sidebar-logout" title="Logout">
-                    <i class="fa-solid fa-right-from-bracket"></i>
-                    <span>Logout</span>
+                <button type="submit" class="admin-sidebar-link admin-sidebar-logout" style="background:none; border:none; width:100%; text-align:left; cursor:pointer;" title="Logout">
+                    <img src="{{ asset('systemicons/logout.png') }}" alt="Logout Icon" class="admin-sidebar-icon">
+                    <span class="admin-sidebar-label">Logout</span>
                 </button>
             </form>
         </div>
     </nav>
 </aside>
+
+<style>
+/* Turns black PNGs into white icons */
+.admin-sidebar-icon, 
+.admin-sidebar-logo-img {
+    filter: brightness(0) invert(1);
+}
+
+.admin-sidebar-icon {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.admin-sidebar-logo-img {
+    width: 30px; /* Adjust based on your logo's ideal size */
+    height: 30px;
+    object-fit: contain;
+}
+
+/* For the slim sidebar effect */
+.admin-sidebar-collapsed .admin-sidebar-label,
+.admin-sidebar-collapsed .admin-sidebar-brand-text {
+    display: none;
+}
+</style>
 
 <script>
 (function () {
