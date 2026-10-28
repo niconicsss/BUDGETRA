@@ -110,7 +110,6 @@
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
             <div>
                 <div style="font-size:15px;font-weight:700;color:var(--dark);">Travel Preferences</div>
-                <div style="font-size:12px;color:var(--muted);margin-top:2px;">From your Profile Builder setup.</div>
             </div>
         </div>
 
@@ -163,7 +162,7 @@
                     </div>
                     <a href="{{ route('profile.setup') }}?step=2&return=profile.edit" class="rv-edit">Edit</a>
                 </div>
-                <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $budgetAmount ? $budgetSymbol . number_format($budgetAmount) : '—' }}</div>
+                <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $budgetAmount ? $budgetSymbol . number_format($budgetAmount) : '' }}</div>
                 <div style="height:4px;border-radius:2px;background:var(--bg);margin-top:8px;overflow:hidden;">
                     <div style="height:100%;width:{{ $budgetAmount ? min(100, round($budgetAmount / 3000 * 100)) : 0 }}%;background:var(--primary);"></div>
                 </div>
@@ -178,7 +177,6 @@
                     <a href="{{ route('profile.setup') }}?step=3&return=profile.edit" class="rv-edit">Edit</a>
                 </div>
                 <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $profile->travel_style ?: '—' }}</div>
-                <div style="font-size:11px;color:var(--muted);">Cost-splitting & accommodation fit</div>
             </div>
 
             {{-- Transportation and Accommodation are separate steps in the
@@ -193,7 +191,6 @@
                     <a href="{{ route('profile.setup') }}?step=5&return=profile.edit" class="rv-edit">Edit</a>
                 </div>
                 <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $profile->preferred_transportation ?: '—' }}</div>
-                <div style="font-size:11px;color:var(--muted);">How you'll travel</div>
             </div>
 
             <div class="rv-card-sm">
@@ -205,7 +202,6 @@
                     <a href="{{ route('profile.setup') }}?step=6&return=profile.edit" class="rv-edit">Edit</a>
                 </div>
                 <div style="font-size:15px;font-weight:700;color:var(--dark);">{{ $profile->preferred_accommodation ?: '—' }}</div>
-                <div style="font-size:11px;color:var(--muted);">Where you'll stay</div>
             </div>
         </div>
 
