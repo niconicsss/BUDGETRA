@@ -26,6 +26,7 @@ class SavedTrips extends Component
     public string $memberError   = '';
     public array  $pendingMembers = [];
     public array  $savedMembers   = [];
+    public array  $tripOwner      = [];
     public ?int $shareTripId    = null;
     public string $shareCode    = '';
     public string $shareLink    = '';
@@ -51,12 +52,17 @@ class SavedTrips extends Component
     public function openEditName(int $id): void
     {
         $trip = Trip::find($id);
-        // Owner-only: saveEditName() already refuses to write someone else's
-        // trip, so opening the modal would only ever dead-end.
-        if (!$trip || $trip->user_id !== auth()->id()) return;
+        if (!$trip) return;
+        // The owner and every member of the trip can edit it.
+        if (!$this->canEditTrip($trip)) return;
         $this->editNameTripId = $id;
         $this->editNameValue = $trip->trip_name ?? $trip->destination ?? '';
-        $this->editType      = strcasecmp($trip->travel_type ?? 'Solo', 'Solo') === 0 ? 'Solo' : 'Group';
+        $hasMembers          = GroupMember::where('trip_id', $id)->exists();
+        // A trip with members is a group trip whatever travel_type says —
+        // covers trips joined by share code before travel_type was updated.
+        $this->editType      = ($hasMembers || strcasecmp($trip->travel_type ?? 'Solo', 'Solo') !== 0) ? 'Group' : 'Solo';
+        $owner               = $trip->user;
+        $this->tripOwner     = ['name' => $owner->full_name ?? '', 'email' => $owner->email ?? '', 'photo' => $this->photoUrl($owner)];
         $today = \Carbon\Carbon::today();
         $computed = $trip->start_date->gt($today) ? 'upcoming' : ($trip->end_date->lt($today) ? 'past' : 'active');
         $this->editStatus     = $trip->getRawOriginal('status') ?? $computed;
@@ -66,8 +72,21 @@ class SavedTrips extends Component
         $this->savedMembers   = GroupMember::where('trip_id', $id)
             ->with('user')
             ->get()
-            ->map(fn($m) => ['id' => $m->user_id, 'name' => $m->user->full_name, 'email' => $m->user->email])
+            ->map(fn($m) => ['id' => $m->user_id, 'name' => $m->user->full_name, 'email' => $m->user->email, 'photo' => $this->photoUrl($m->user)])
             ->toArray();
+    }
+
+    // The account's uploaded profile photo, or null to fall back to the initial.
+    private function photoUrl(?User $user): ?string
+    {
+        return $user?->profile_photo ? \Illuminate\Support\Facades\Storage::url($user->profile_photo) : null;
+    }
+
+    private function canEditTrip(?Trip $trip): bool
+    {
+        if (!$trip) return false;
+        return $trip->user_id === auth()->id()
+            || GroupMember::where('trip_id', $trip->id)->where('user_id', auth()->id())->exists();
     }
 
     public function lookupMember(): void
@@ -91,7 +110,7 @@ class SavedTrips extends Component
             $this->memberError = 'This user is already added.';
             return;
         }
-        $this->pendingMembers[] = ['id' => $user->id, 'name' => $user->full_name, 'email' => $user->email];
+        $this->pendingMembers[] = ['id' => $user->id, 'name' => $user->full_name, 'email' => $user->email, 'photo' => $this->photoUrl($user)];
         $this->memberEmail = '';
     }
 
@@ -102,7 +121,7 @@ class SavedTrips extends Component
 
     public function removeSavedMember(int $userId): void
     {
-        if (!$this->editNameTripId) return;
+        if (!$this->editNameTripId || !$this->canEditTrip(Trip::find($this->editNameTripId))) return;
         GroupMember::where('trip_id', $this->editNameTripId)->where('user_id', $userId)->delete();
         $this->savedMembers = array_values(array_filter($this->savedMembers, fn($m) => $m['id'] !== $userId));
     }
@@ -111,7 +130,7 @@ class SavedTrips extends Component
     {
         if (!$this->editNameTripId || trim($this->editNameValue) === '') return;
         $trip = Trip::find($this->editNameTripId);
-        if ($trip && $trip->user_id === auth()->id()) {
+        if ($trip && $this->canEditTrip($trip)) {
             $trip->update([
                 'trip_name'   => trim($this->editNameValue),
                 'travel_type' => $this->editType,
@@ -148,6 +167,7 @@ class SavedTrips extends Component
         $this->memberError     = '';
         $this->pendingMembers  = [];
         $this->savedMembers    = [];
+        $this->tripOwner       = [];
     }
 
     public function cancelEditName(): void
@@ -160,6 +180,7 @@ class SavedTrips extends Component
         $this->memberError     = '';
         $this->pendingMembers  = [];
         $this->savedMembers    = [];
+        $this->tripOwner       = [];
     }
 
     public function cancelDelete(): void
@@ -171,7 +192,13 @@ class SavedTrips extends Component
     public function openShare(int $id): void
     {
         $trip = Trip::find($id);
-        if (!$trip || $trip->user_id !== auth()->id()) return;
+        if (!$trip) return;
+
+        // One trip, one code. The owner and every member see the same code,
+        // so whoever passes it on, the next person joins this same trip.
+        $isOwner  = $trip->user_id === auth()->id();
+        $isMember = GroupMember::where('trip_id', $trip->id)->where('user_id', auth()->id())->exists();
+        if (!$isOwner && !$isMember) return;
 
         $importer = app(TripImportService::class);
         if (!$importer->isShareable($trip)) {
@@ -282,7 +309,8 @@ class SavedTrips extends Component
                 // Solo trips are always one head no matter what num_travelers
                 // happens to hold — a trip switched Group→Solo can be left
                 // carrying the old count.
-                $isGroup = strcasecmp($trip->travel_type ?? 'Solo', 'Group') === 0;
+                $isGroup = strcasecmp($trip->travel_type ?? 'Solo', 'Group') === 0
+                    || $trip->group_members_count > 0;
                 $heads   = $isGroup
                     ? max(1, (int) $trip->num_travelers, $trip->group_members_count + 1)
                     : 1;

@@ -78,7 +78,7 @@ class TripPlannerWizard extends Component
             return;
         }
 
-        $importer->import($sourceTrip, auth()->user());
+        $joined = $importer->joinTrip($sourceTrip, auth()->user());
 
         // If an earlier pass through Trip Details already autosaved a draft
         // for this session, the traveler is abandoning it in favor of the
@@ -91,7 +91,7 @@ class TripPlannerWizard extends Component
             $this->draftTripId = null;
         }
 
-        session()->flash('success', 'Trip imported!');
+        session()->flash('success', $joined ? 'You joined the trip!' : "You're already a member of this trip.");
         $this->redirect(route('saved-trips'), navigate: true);
     }
 
@@ -114,6 +114,7 @@ class TripPlannerWizard extends Component
     public array  $flightResults     = [];
     public bool   $flightLoading     = false;
     public string $flightError       = '';
+    public string $flightNotice      = '';
     public string $flightTripType    = 'one_way'; // 'one_way' | 'round_trip' | 'multi_city'
     public ?array $selectedFlight    = null;
     // Index of a flight card awaiting a "Confirm this flight?" click before
@@ -927,12 +928,39 @@ class TripPlannerWizard extends Component
         return $direct ?: $flights;
     }
 
+    /**
+     * Airports with no scheduled commercial flights, mapped to the airport
+     * travellers actually fly into before going overland. Google Flights
+     * returns nothing at all for these, so searching them as-is always ends
+     * on an empty board. Baguio's package data in PlaceCatalog already routes
+     * it the same way (MNL + bus from Pasay).
+     */
+    private const NO_SCHEDULED_FLIGHTS = [
+        'BAG' => ['code' => 'MNL', 'city' => 'Baguio', 'via' => 'Manila', 'onward' => 'about 4-6 hours by bus from Pasay or Cubao'],
+    ];
+
+    /**
+     * Swaps an airport without scheduled flights for its gateway airport.
+     * Returns [searchCode, notice]; the notice is '' when nothing changed.
+     */
+    private function flightGateway(string $code, bool $isOrigin = false): array
+    {
+        $gw = self::NO_SCHEDULED_FLIGHTS[strtoupper($code)] ?? null;
+        if (!$gw) return [$code, ''];
+
+        $notice = $isOrigin
+            ? "{$gw['city']} has no regular commercial flights, so these flights depart from {$gw['via']} ({$gw['code']}). {$gw['city']} is {$gw['onward']}."
+            : "{$gw['city']} has no regular commercial flights, so these flights land in {$gw['via']} ({$gw['code']}). {$gw['city']} is {$gw['onward']}.";
+        return [$gw['code'], $notice];
+    }
+
     public function searchManualFlights(): void
     {
         set_time_limit(120);
         $this->flightLoading   = true;
         $this->flightResults   = [];
         $this->flightError     = '';
+        $this->flightNotice    = '';
         $this->mcFlightStep    = false;
         $this->mcSearched      = $this->flightTripType === 'multi_city' && !empty($this->mcTo);
         $this->mcFlightResults = [];
@@ -953,6 +981,10 @@ class TripPlannerWizard extends Component
         $depart    = $this->startDate ?: date('Y-m-d', strtotime('+7 days'));
         $return    = $this->flightTripType === 'round_trip' && $this->endDate ? $this->endDate : '';
 
+        [$fromCode, $fromNotice] = $this->flightGateway($fromCode, true);
+        [$toCode,   $toNotice]   = $this->flightGateway($toCode);
+        $this->flightNotice = trim($fromNotice . ' ' . $toNotice);
+
         try {
             $data = $serp->searchFlightsRaw($fromCode, $toCode, $depart, $return);
             if (empty($data)) {
@@ -970,7 +1002,12 @@ class TripPlannerWizard extends Component
         }
 
         if (empty($this->flightResults)) {
-            $this->flightError = 'We couldn\'t load flights right now. Try searching again in a moment.';
+            // searchFlightsRaw() can't tell "no service on this route" from an
+            // outage, so don't promise that retrying will help.
+            $when = date('M j, Y', strtotime($depart));
+            $this->flightError = "No flights found from {$fromCode} to {$toCode} on {$when}. "
+                . 'This route may not have regular flights. Try a nearby airport or another date.';
+            $this->flightNotice = '';
         }
 
         $this->flightLoading = false;
@@ -1046,6 +1083,9 @@ class TripPlannerWizard extends Component
             $serp      = new SerpApiService();
             $fromCode  = $this->resolveCode($this->manualTo);
             $toCode    = $this->resolveCode($this->mcTo);
+            [$fromCode, $fromNotice] = $this->flightGateway($fromCode, true);
+            [$toCode,   $toNotice]   = $this->flightGateway($toCode);
+            $this->flightNotice = trim($fromNotice . ' ' . $toNotice);
             try {
                 // Each multi-city leg is a one-way flight, not a round trip
                 $data = $serp->searchFlightsRaw($fromCode, $toCode, $this->mcStartDate);

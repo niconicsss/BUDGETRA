@@ -2,6 +2,7 @@
 
     @php
         $trip       = $goal->trip;
+        $saved      = $this->tripSaved();
         $dest       = $trip?->trip_name ?? $trip?->destination ?? $goal->goal_name;
         $tType      = strtoupper($trip?->travel_type ?? 'SOLO');
         $typeColor    = $tType === 'GROUP' ? '#A855F7' : '#14B8A6';
@@ -24,6 +25,14 @@
              onerror="this.style.display='none'">
         @endif
         <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.1),rgba(0,0,0,0.55));"></div>
+
+        @if($this->isGroup)
+        <button wire:click="openHistory" type="button" title="Savings history"
+                style="position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,0.35);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;backdrop-filter:blur(4px);transition:background .18s;z-index:2;"
+                onmouseenter="this.style.background='rgba(0,0,0,0.55)'" onmouseleave="this.style.background='rgba(0,0,0,0.35)'">
+            <i class="fa-solid fa-clock-rotate-left" style="font-size:13px;"></i>
+        </button>
+        @endif
 
         {{-- Stacked badges top-left --}}
         <div style="position:absolute;top:14px;left:14px;display:flex;flex-direction:column;gap:6px;">
@@ -75,8 +84,8 @@
     <div style="padding:20px 22px 22px;display:flex;flex-direction:column;flex:1;">
 
         @php
-            $cardPct = $targetCost > 0 ? min(100, round($goal->current_savings / $targetCost * 100, 1)) : 0;
-            $cardDone = $goal->current_savings >= $targetCost;
+            $cardPct = $targetCost > 0 ? min(100, round($saved / $targetCost * 100, 1)) : 0;
+            $cardDone = $saved >= $targetCost;
 
             $hasConversion = $this->hasCurrencyConversion();
             $destCode      = $this->destinationCurrency();
@@ -84,7 +93,7 @@
             $homeSym       = $this->homeCurrencySymbol();
             $destSym       = $this->destinationCurrencySymbol();
             $rateLabel     = $this->conversionRateLabel();
-            $destSaved     = $hasConversion ? $this->displayDestinationAmount($goal->current_savings) : null;
+            $destSaved     = $hasConversion ? $this->displayDestinationAmount($saved) : null;
             $destTarget    = $hasConversion ? $this->displayDestinationAmount($targetCost) : null;
         @endphp
 
@@ -111,7 +120,7 @@
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;">
             <div>
                 <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;">Saved Amount</div>
-                <div style="font-size:22px;font-weight:800;color:#C8874A;line-height:1.2;">{{ $this->displayAmount($goal->current_savings) }}</div>
+                <div style="font-size:22px;font-weight:800;color:#C8874A;line-height:1.2;">{{ $this->displayAmount($saved) }}</div>
                 @if($destSaved)
                 <div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:3px;" title="Destination currency equivalent">
                     ≈ {{ $destSaved }} <span style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase;">{{ $destCode }}</span>
@@ -164,6 +173,49 @@
     </div>
 
     {{-- Deposit modal --}}
+    @if ($showHistory)
+    @php $history = $this->historyEntries(); @endphp
+    <div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;" wire:click.self="closeHistory">
+        <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:22px;width:100%;max-width:420px;padding:28px;max-height:85vh;display:flex;flex-direction:column;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px;">
+                <div style="width:40px;height:40px;border-radius:12px;background:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <i class="fa-solid fa-clock-rotate-left" style="color:#fff;font-size:16px;"></i>
+                </div>
+                <div>
+                    <div style="font-size:18px;font-weight:700;color:var(--dark);">Savings History</div>
+                    <div style="font-size:12px;color:var(--muted);">{{ $dest }}</div>
+                </div>
+            </div>
+            <div style="overflow-y:auto;flex:1;">
+                @forelse($history as $h)
+                @php $isDep = $h['type'] === 'deposit'; @endphp
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);">
+                    <div style="width:34px;height:34px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:{{ $isDep ? 'rgba(22,163,74,0.14)' : 'var(--primary-light)' }};">
+                        <i class="fa-solid {{ $isDep ? 'fa-coins' : 'fa-bullseye' }}" style="font-size:13px;color:{{ $isDep ? '#16A34A' : 'var(--primary)' }};"></i>
+                    </div>
+                    <div style="flex:1;min-width:0;">
+                        <div style="font-size:13px;color:var(--dark);line-height:1.4;">
+                            <strong>{{ $h['mine'] ? 'You' : $h['who'] }}</strong>
+                            {{ $isDep ? 'added savings' : 'set up a savings goal' }}
+                        </div>
+                        <div style="font-size:11px;color:var(--muted);">{{ $h['at']?->format('M j, Y · g:i A') }}</div>
+                    </div>
+                    <div style="font-size:13px;font-weight:700;white-space:nowrap;color:{{ $isDep ? '#16A34A' : 'var(--muted)' }};">
+                        {{ $isDep ? '+' : 'Target ' }}{{ $this->displayHomeAmount($h['amount']) }}
+                    </div>
+                </div>
+                @empty
+                <p style="color:var(--muted);font-size:13px;text-align:center;padding:24px 0;margin:0;">No savings activity yet.</p>
+                @endforelse
+            </div>
+            <button wire:click="closeHistory" type="button"
+                    style="margin-top:18px;width:100%;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:12px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'Hanken Grotesk',sans-serif;">
+                Close
+            </button>
+        </div>
+    </div>
+    @endif
+
     @if ($showDeposit)
     <div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(3px);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;" wire:click.self="closeDeposit">
         <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:22px;width:100%;max-width:400px;padding:28px;">
@@ -182,7 +234,7 @@
                 $homeRate = $this->homeRate() ?? 1.0;
                 $destRate = $this->destinationRate() ?? 1.0;
                 $targetHome = $homeRate > 0 ? ($targetCost / $homeRate) : $targetCost;
-                $savedHome  = $homeRate > 0 ? ($goal->current_savings / $homeRate) : $goal->current_savings;
+                $savedHome  = $homeRate > 0 ? ($saved / $homeRate) : $saved;
                 $depositRemainingHome = max(0, $targetHome - $savedHome);
                 $destToHomeRate = $destRate > 0 ? ($destRate / $homeRate) : 1.0;
             @endphp

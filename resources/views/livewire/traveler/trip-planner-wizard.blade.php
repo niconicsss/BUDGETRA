@@ -1019,6 +1019,13 @@ $originCountryLabel2 = \App\Support\PlaceCatalog::originCountryFor(auth()->user(
         </div>
     </div>
 
+    @if ($flightNotice && !$flightLoading && !$flightError)
+    <div style="display:flex;align-items:flex-start;gap:10px;background:var(--primary-light);border:1.5px solid var(--border);border-radius:12px;padding:12px 16px;margin-bottom:14px;font-size:13px;color:var(--dark);line-height:1.5;">
+        <i class="fa-solid fa-circle-info" style="color:var(--primary);margin-top:3px;"></i>
+        <span>{{ $flightNotice }}</span>
+    </div>
+    @endif
+
     {{-- Loading --}}
     @if ($flightLoading)
     <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:70px 20px;background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;">

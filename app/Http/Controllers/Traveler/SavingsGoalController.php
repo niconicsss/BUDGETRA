@@ -14,31 +14,34 @@ class SavingsGoalController extends Controller
         // added to. Scoped by user_id as well as trip_id: on a group trip each
         // member saves toward their own share, so the owner's goal is not the
         // member's goal and "already has a goal" has to be asked per person.
-        $tripsWithoutGoals = auth()->user()->accessibleTrips()
+        // Only the trip owner has a savings goal. Members of a group trip save
+        // into the owner's goal, so they never get one of their own.
+        $tripsWithoutGoals = Trip::where('user_id', auth()->id())
             ->whereDoesntHave('savingsGoals', fn ($q) => $q->where('user_id', auth()->id()))
-            ->withCount('groupMembers')
             ->get();
 
         foreach ($tripsWithoutGoals as $trip) {
-            $isGroup = strcasecmp($trip->travel_type ?? 'Solo', 'Group') === 0;
-            $heads   = $isGroup
-                ? max(1, (int) $trip->num_travelers, $trip->group_members_count + 1)
-                : 1;
             $total   = (float) ($trip->total_cost ?: $trip->budget_limit ?: 0);
 
             SavingsGoal::create([
                 'user_id'         => auth()->id(),
                 'trip_id'         => $trip->id,
                 'goal_name'       => $trip->destination . ' Trip',
-                // A member's target is their share of the bill, not the whole
-                // trip — matching the per-person figure Saved Trips shows.
-                'target_amount'   => max(1, round($total / $heads, 2)),
+                'target_amount'   => max(1, round($total, 2)),
                 'current_savings' => 0,
                 'deadline'        => $trip->start_date,
             ]);
         }
 
-        $goals = auth()->user()->savingsGoals()->with('trip')->whereNotNull('trip_id')->latest()->get()
+        // One card per trip: the traveller's own goal. On a group trip that
+        // card totals every member's savings and its History lists who added
+        // what (SavingsGoalManager), so other members' goals aren't listed.
+        // The owner's goal for every trip the traveller is on — their own
+        // trips, and the trips they joined as a member.
+        $goals = SavingsGoal::with('trip')
+            ->whereIn('trip_id', auth()->user()->accessibleTrips()->select('id'))
+            ->whereHas('trip', fn ($t) => $t->whereColumn('trips.user_id', 'savings_goals.user_id'))
+            ->latest()->get()
             // Two goals whose trips share the same start date usually means
             // one is a single-leg duplicate of a multi-city trip's own leg
             // — put the multi-city trip's goal first in that case, whether

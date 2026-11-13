@@ -2,6 +2,8 @@
 namespace App\Livewire\Traveler;
 
 use App\Models\Notification;
+use App\Models\GroupMember;
+use App\Models\SavingsDeposit;
 use App\Models\SavingsGoal;
 use App\Services\CurrencyConverterService;
 use App\Support\PlaceCatalog;
@@ -14,6 +16,7 @@ class SavingsGoalManager extends Component
 
     public bool  $showDeposit    = false;
     public bool  $showProjection = false;
+    public bool  $showHistory    = false;
     public float $depositAmount  = 0;
 
     public function openDeposit(): void
@@ -156,12 +159,15 @@ class SavingsGoalManager extends Component
 
     public function submitDeposit(): void
     {
-        abort_if($this->goal->user_id !== auth()->id(), 403);
+        // The owner's goal is the trip's goal; group members save into it.
+        abort_if(!$this->goal->trip_id
+            ? $this->goal->user_id !== auth()->id()
+            : !auth()->user()->canAccessTrip($this->goal->trip_id), 403);
 
         $homeCode = $this->homeCurrency();
         $homeRate = $this->homeRate() ?? 1.0;
         $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
-        $remainingPesos = max(0, $targetCost - $this->goal->current_savings);
+        $remainingPesos = max(0, $targetCost - $this->tripSaved());
         $remainingHome  = $homeRate > 0 ? round($remainingPesos / $homeRate, 2) : $remainingPesos;
 
         $this->validate([
@@ -175,16 +181,21 @@ class SavingsGoalManager extends Component
 
         $pesoDeposit = $homeCode === 'PHP' ? (float) $this->depositAmount : round((float) $this->depositAmount * $homeRate, 2);
 
-        $wasCompleted = $this->goal->current_savings >= $targetCost;
+        $wasCompleted = $this->tripSaved() >= $targetCost;
 
         $this->goal->increment('current_savings', $pesoDeposit);
+        SavingsDeposit::create([
+            'savings_goal_id' => $this->goal->id,
+            'user_id'         => auth()->id(),
+            'amount'          => $pesoDeposit,
+        ]);
         $this->goal->refresh();
 
-        $savedHomeFormatted = $this->displayHomeAmount($this->goal->current_savings);
+        $savedHomeFormatted = $this->displayHomeAmount($this->tripSaved());
         $depositHomeFormatted = $this->homeCurrencySymbol() . number_format($this->depositAmount, 2);
         $targetHomeFormatted = $this->displayHomeAmount($targetCost);
 
-        if (!$wasCompleted && $this->goal->current_savings >= $targetCost) {
+        if (!$wasCompleted && $this->tripSaved() >= $targetCost) {
             Notification::create([
                 'user_id' => $this->goal->user_id,
                 'trip_id' => $this->goal->trip_id,
@@ -194,10 +205,10 @@ class SavingsGoalManager extends Component
             ]);
         } elseif (!$wasCompleted) {
             $pct = $targetCost > 0
-                ? min(100, round($this->goal->current_savings / $targetCost * 100))
+                ? min(100, round($this->tripSaved() / $targetCost * 100))
                 : 0;
             Notification::create([
-                'user_id' => $this->goal->user_id,
+                'user_id' => auth()->id(),
                 'trip_id' => $this->goal->trip_id,
                 'type'    => 'savings_goal_deposit',
                 'message' => "You added {$depositHomeFormatted} to \"{$this->goal->goal_name}\" — now {$savedHomeFormatted} of {$targetHomeFormatted} saved ({$pct}%).",
@@ -214,13 +225,13 @@ class SavingsGoalManager extends Component
     {
         $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
         if (!$targetCost) return 0;
-        return min(100, round($this->goal->current_savings / $targetCost * 100, 1));
+        return min(100, round($this->tripSaved() / $targetCost * 100, 1));
     }
 
     public function getDailyNeededProperty(): float
     {
         $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
-        $remaining = $targetCost - $this->goal->current_savings;
+        $remaining = $targetCost - $this->tripSaved();
         if ($remaining <= 0) return 0;
         $days = max(1, (int) Carbon::today()->diffInDays($this->goal->deadline, false));
         return $days > 0 ? round($remaining / $days, 2) : $remaining;
@@ -234,7 +245,48 @@ class SavingsGoalManager extends Component
     public function getIsCompletedProperty(): bool
     {
         $targetCost = $this->goal->trip?->total_cost ?? $this->goal->target_amount;
-        return $this->goal->current_savings >= $targetCost;
+        return $this->tripSaved() >= $targetCost;
+    }
+
+    // One goal per trip (the owner's); every member's deposits go into it.
+    public function tripSaved(): float
+    {
+        return (float) $this->goal->current_savings;
+    }
+
+    public function openHistory(): void  { $this->showHistory = true; }
+    public function closeHistory(): void { $this->showHistory = false; }
+
+    // A trip with members, or one marked Group, gets the shared history.
+    public function getIsGroupProperty(): bool
+    {
+        $trip = $this->goal->trip;
+        if (!$trip) return false;
+        return strcasecmp($trip->travel_type ?? 'Solo', 'Group') === 0
+            || GroupMember::where('trip_id', $trip->id)->exists();
+    }
+
+    /**
+     * Savings activity on this trip's goal, newest first: the owner setting
+     * it up, and every amount any member added.
+     */
+    public function historyEntries(): array
+    {
+        $goalIds = collect([$this->goal->id]);
+        $row = fn ($type, $at, $user, $amount) => [
+            'type'   => $type,
+            'at'     => $at,
+            'who'    => $user?->full_name ?: ($user?->email ?? 'A trip member'),
+            'mine'   => $user?->id === auth()->id(),
+            'amount' => (float) $amount,
+        ];
+
+        $created = SavingsGoal::with('user:id,full_name,email')->whereIn('id', $goalIds)->get()
+            ->map(fn ($g) => $row('goal', $g->created_at, $g->user, $g->target_amount));
+        $deposits = SavingsDeposit::with('user:id,full_name,email')->whereIn('savings_goal_id', $goalIds)->get()
+            ->map(fn ($d) => $row('deposit', $d->created_at, $d->user, $d->amount));
+
+        return $created->concat($deposits)->sortByDesc('at')->values()->all();
     }
 
     public function render()

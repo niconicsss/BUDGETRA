@@ -21,8 +21,9 @@ class TripImportController extends Controller
             return redirect()->route('saved-trips')->with('error', 'This trip has nothing shareable saved on it.');
         }
 
-        $importer->import($sourceTrip, auth()->user());
+        $joined = $importer->joinTrip($sourceTrip, auth()->user());
 
-        return redirect()->route('saved-trips')->with('success', 'Trip imported!');
+        return redirect()->route('saved-trips')->with('success',
+            $joined ? 'You joined the trip!' : "You're already a member of this trip.");
     }
 }

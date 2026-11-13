@@ -1,7 +1,9 @@
 <?php
 namespace App\Services;
 
+use App\Models\GroupMember;
 use App\Models\Itinerary;
+use App\Models\Notification;
 use App\Models\Trip;
 use App\Models\User;
 
@@ -21,10 +23,16 @@ class TripImportService
     // Same code forever once generated — no revoke, per product decision.
     public function shareCodeFor(Trip $trip): string
     {
-        if (!$trip->share_code) {
-            $trip->update(['share_code' => Trip::generateUniqueShareCode()]);
+        // Re-read before generating so two people opening Share at the same
+        // moment (owner and a member) can't each mint a different code.
+        $current = Trip::whereKey($trip->id)->value('share_code');
+        if (!$current) {
+            $current = Trip::generateUniqueShareCode();
+            Trip::whereKey($trip->id)->whereNull('share_code')->update(['share_code' => $current]);
+            $current = Trip::whereKey($trip->id)->value('share_code');
         }
-        return $trip->share_code;
+        $trip->share_code = $current;
+        return $current;
     }
 
     public function findByCode(string $code): ?Trip
@@ -32,6 +40,40 @@ class TripImportService
         $code = strtoupper(trim($code));
         if ($code === '') return null;
         return Trip::where('share_code', $code)->first();
+    }
+
+    // Pasting a share code joins the recipient to the owner's trip as a group
+    // member rather than handing them a detached copy — so the trip itself
+    // becomes a Group trip, the owner sees who joined in Edit Trip, and both
+    // travellers are looking at the same plan. Returns false when the
+    // recipient was already a member (nothing changed).
+    public function joinTrip(Trip $sourceTrip, User $recipient): bool
+    {
+        $link = GroupMember::firstOrCreate([
+            'trip_id' => $sourceTrip->id,
+            'user_id' => $recipient->id,
+        ]);
+
+        $memberCount = GroupMember::where('trip_id', $sourceTrip->id)->count();
+        $sourceTrip->update([
+            'travel_type'   => 'Group',
+            'is_shared'     => true,
+            'num_travelers' => max((int) $sourceTrip->num_travelers, $memberCount + 1),
+        ]);
+
+        if ($link->wasRecentlyCreated) {
+            $who   = $recipient->full_name ?: $recipient->email;
+            $where = $sourceTrip->trip_name ?: $sourceTrip->destination;
+            Notification::create([
+                'user_id' => $sourceTrip->user_id,
+                'trip_id' => $sourceTrip->id,
+                'type'    => 'trip_joined',
+                'message' => "{$who} joined your trip to {$where} using your share code.",
+                'is_read' => false,
+            ]);
+        }
+
+        return $link->wasRecentlyCreated;
     }
 
     // Creates a brand-new Trip for the recipient from the source trip's

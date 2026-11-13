@@ -53,7 +53,7 @@
                         <span class="sr-only">Change profile photo</span>
                     </label>
                     <input type="file" id="profile_photo" name="profile_photo"
-                           accept="image/jpeg,image/png,image/jpg,image/webp" style="display:none;"
+                           accept="image/*" style="display:none;"
                            onchange="budgetraPreviewAvatar(this)">
                 </div>
                 <div style="min-width:0;">
@@ -331,7 +331,40 @@
     // Matches the rule in ProfileController::update (max:5120, in kilobytes).
     // Both are needed: this one spares the traveler a slow upload that was
     // always going to be refused, and that one is what actually enforces it.
-    var BUDGETRA_MAX_PHOTO_BYTES = 5 * 1024 * 1024;
+    // What the picker accepts. The photo is shrunk to a small JPEG before it
+    // is uploaded (budgetraShrinkPhoto), so a full-size phone photo is fine —
+    // this only stops absurd files from being decoded at all.
+    var BUDGETRA_MAX_PHOTO_BYTES = 25 * 1024 * 1024;
+
+    /**
+     * Resizes the picked photo to at most 800px on its long side and re-encodes
+     * it as JPEG. Any format the browser can show (JPG, PNG, WebP, GIF, BMP,
+     * AVIF…) comes out as a ~100–300 KB JPEG, well under the server's upload
+     * limit (PHP's upload_max_filesize is 2 MB here).
+     */
+    function budgetraShrinkPhoto(file) {
+        return new Promise(function (resolve, reject) {
+            var url = URL.createObjectURL(file);
+            var img = new Image();
+            img.onload = function () {
+                var max   = 800;
+                var scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+                var canvas = document.createElement('canvas');
+                canvas.width  = Math.max(1, Math.round(img.naturalWidth * scale));
+                canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
+                var ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#fff'; // transparent PNGs get white, not black
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                URL.revokeObjectURL(url);
+                canvas.toBlob(function (blob) {
+                    blob ? resolve(blob) : reject(new Error('encode failed'));
+                }, 'image/jpeg', 0.88);
+            };
+            img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode failed')); };
+            img.src = url;
+        });
+    }
 
     function budgetraShowPhotoError(message) {
         document.getElementById('photoErrorMsg').textContent = message;
@@ -361,7 +394,7 @@
             input.value = '';
             budgetraShowPhotoError(
                 'That photo is ' + (file.size / 1048576).toFixed(1) +
-                ' MB. Profile photos have to be 5 MB or smaller.'
+                ' MB. Profile photos have to be 25 MB or smaller.'
             );
             return;
         }
@@ -474,12 +507,22 @@
             btn.setAttribute('aria-label', 'Saving changes…');
             btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin" style="font-size:11px;" aria-hidden="true"></i>';
 
-            fetch(form.action, {
+            var fd     = new FormData(form);
+            var picker = document.getElementById('profile_photo');
+            var photo  = picker && picker.files[0];
+            var ready  = photo
+                ? budgetraShrinkPhoto(photo).then(function (blob) {
+                      fd.set('profile_photo', blob, 'avatar.jpg');
+                      return fd;
+                  })
+                : Promise.resolve(fd);
+
+            ready.then(function (body) { return fetch(form.action, {
                 method: 'POST',            // with _method=PUT in the body, so the file survives
-                body: new FormData(form),
+                body: body,
                 headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                 credentials: 'same-origin',
-            }).then(function (res) {
+            }); }).then(function (res) {
                 return res.json().catch(function () { return {}; }).then(function (data) {
                     return { ok: res.ok, status: res.status, data: data };
                 });

@@ -30,6 +30,7 @@
 .st-member-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:700;color:#fff;}
 .st-member-avatar-saved{background:var(--muted);}
 .st-member-avatar-pending{background:var(--primary);}
+.st-member-avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;}
 .st-member-name{font-size:13px;font-weight:600;color:var(--dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .st-member-email{font-size:11px;color:var(--muted);}
 .st-member-remove{
@@ -185,7 +186,7 @@
             $dest     = $trip->trip_name ?: (($trip->destination && $trip->destination !== 'Draft') ? $trip->destination : 'No destination set');
             $fromCode = $trip->origin_code ?? 'MNL';
             $toCode   = $trip->destination_code ?? '';
-            $tType    = strtoupper($trip->travel_type ?? 'SOLO');
+            $tType    = ($trip->group_members_count ?? 0) > 0 ? 'GROUP' : strtoupper($trip->travel_type ?? 'SOLO');
             $dateFrom = $trip->start_date->format('M j');
             $dateTo   = $trip->end_date->format('M j, Y');
             $days     = $trip->days;
@@ -228,9 +229,11 @@
                         <button wire:click="openEditName({{ $trip->id }})" @click="open=false">
                             <i class="fa-regular fa-pen-to-square"></i> Edit Trip
                         </button>
+                        @unless ($trip->shared_with_me)
                         <button wire:click="confirmDelete({{ $trip->id }})" @click="open=false" class="card-menu-danger">
                             <i class="fa-regular fa-trash-can"></i> Delete Trip
                         </button>
+                        @endunless
                     </div>
                 </div>
                 {{-- Share button, directly below the kebab menu --}}
@@ -499,7 +502,7 @@
     {{-- Edit Trip Modal --}}
     @if ($editNameTripId)
     <div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);z-index:2100;display:flex;align-items:center;justify-content:center;padding:20px;">
-        <div x-data="{ type: '{{ $editType }}' }" style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:24px;width:100%;max-width:400px;padding:26px;max-height:90vh;overflow-y:auto;animation:stModalPop .22s cubic-bezier(.34,1.56,.64,1);">
+        <div x-data="{ type: '{{ $editType }}', removing: null }" style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:24px;width:100%;max-width:400px;padding:26px;max-height:90vh;overflow-y:auto;animation:stModalPop .22s cubic-bezier(.34,1.56,.64,1);">
 
             {{-- Header --}}
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
@@ -508,6 +511,31 @@
                 </div>
                 <span style="font-size:18px;font-weight:800;color:var(--dark);">Edit Trip</span>
             </div>
+
+            {{-- Remove-member confirmation --}}
+            <template x-if="removing">
+                <div style="position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2200;display:flex;align-items:center;justify-content:center;padding:20px;" @click.self="removing = null" @keydown.escape.window="removing = null">
+                    <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:20px;width:100%;max-width:340px;padding:24px;text-align:center;animation:stModalPop .2s cubic-bezier(.34,1.56,.64,1);">
+                        <div style="width:48px;height:48px;border-radius:14px;background:#FEE2E2;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;">
+                            <i class="fa-solid fa-user-minus" style="color:#DC2626;font-size:18px;"></i>
+                        </div>
+                        <div style="font-size:16px;font-weight:800;color:var(--dark);margin-bottom:6px;">Remove member?</div>
+                        <p style="font-size:13px;color:var(--muted);line-height:1.5;margin:0 0 20px;">
+                            Remove <strong x-text="removing.name" style="color:var(--dark);"></strong> from this trip? They will no longer see it in their Saved Trips.
+                        </p>
+                        <div style="display:flex;gap:10px;">
+                            <button type="button" @click="removing = null"
+                                    style="flex:1;background:transparent;color:var(--muted);border:1.5px solid var(--border);border-radius:12px;padding:11px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:'Hanken Grotesk',sans-serif;">
+                                Cancel
+                            </button>
+                            <button type="button" @click="$wire.removeSavedMember(removing.id); removing = null"
+                                    style="flex:1;background:#DC2626;color:#fff;border:none;border-radius:12px;padding:11px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:'Hanken Grotesk',sans-serif;">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </template>
 
             {{-- Trip Name --}}
             <div style="margin-bottom:16px;">
@@ -537,15 +565,27 @@
             <div x-show="type === 'Group'" x-transition style="margin-bottom:16px;">
                 <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;">Group Members</div>
 
+                {{-- Trip owner — always on a group trip, never removable --}}
+                @if(!empty($tripOwner['email']))
+                <div class="st-member-row st-member-row-saved">
+                    <div class="st-member-avatar st-member-avatar-saved">@if(!empty($tripOwner['photo']))<img src="{{ $tripOwner['photo'] }}" alt="">@else{{ strtoupper(substr($tripOwner['name'] ?: $tripOwner['email'],0,1)) }}@endif</div>
+                    <div style="flex:1;min-width:0;">
+                        <div class="st-member-name">{{ $tripOwner['name'] ?: 'Trip owner' }}</div>
+                        <div class="st-member-email">{{ $tripOwner['email'] }}</div>
+                    </div>
+                    <span style="flex-shrink:0;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--primary);background:var(--primary-light);border-radius:99px;padding:3px 9px;">Owner</span>
+                </div>
+                @endif
+
                 {{-- Already-saved members --}}
                 @foreach($savedMembers as $sm)
                 <div class="st-member-row st-member-row-saved">
-                    <div class="st-member-avatar st-member-avatar-saved">{{ strtoupper(substr($sm['name'],0,1)) }}</div>
+                    <div class="st-member-avatar st-member-avatar-saved">@if(!empty($sm['photo']))<img src="{{ $sm['photo'] }}" alt="">@else{{ strtoupper(substr($sm['name'],0,1)) }}@endif</div>
                     <div style="flex:1;min-width:0;">
                         <div class="st-member-name">{{ $sm['name'] }}</div>
                         <div class="st-member-email">{{ $sm['email'] }}</div>
                     </div>
-                    <button wire:click="removeSavedMember({{ $sm['id'] }})" type="button" class="st-member-remove" title="Remove member">
+                                        <button @click="removing = { id: {{ $sm['id'] }}, name: @js($sm['name']) }" type="button" class="st-member-remove" title="Remove member">
                         <i class="fa-solid fa-xmark" style="font-size:11px;"></i>
                     </button>
                 </div>
@@ -554,7 +594,7 @@
                 {{-- Pending (newly added) members --}}
                 @foreach($pendingMembers as $pi => $pm)
                 <div class="st-member-row st-member-row-pending">
-                    <div class="st-member-avatar st-member-avatar-pending">{{ strtoupper(substr($pm['name'],0,1)) }}</div>
+                    <div class="st-member-avatar st-member-avatar-pending">@if(!empty($pm['photo']))<img src="{{ $pm['photo'] }}" alt="">@else{{ strtoupper(substr($pm['name'],0,1)) }}@endif</div>
                     <div style="flex:1;min-width:0;">
                         <div class="st-member-name">{{ $pm['name'] }}</div>
                         <div class="st-member-email">{{ $pm['email'] }}</div>
@@ -565,7 +605,7 @@
                 </div>
                 @endforeach
 
-                {{-- Email lookup input --}}
+                                {{-- Email lookup input --}}
                 <div style="display:flex;gap:8px;margin-top:6px;">
                     <input wire:model="memberEmail" type="email" placeholder="Enter member's email address"
                            wire:keydown.enter.prevent="lookupMember"
@@ -603,7 +643,7 @@
                         onmouseenter="this.style.background='var(--border-light)';this.style.borderColor='var(--border)'" onmouseleave="this.style.background='transparent';this.style.borderColor='var(--border)'">
                     Cancel
                 </button>
-                <button wire:click="saveEditName"
+                                <button wire:click="saveEditName"
                         style="flex:1;background:var(--primary);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:'Hanken Grotesk',sans-serif;transition:background .18s,transform .12s;"
                         onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'"
                         onmousedown="this.style.transform='scale(.97)'" onmouseup="this.style.transform='scale(1)'">

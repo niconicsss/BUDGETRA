@@ -12,7 +12,7 @@ class AttractionBrowser extends Component
     public function getAttractionsProperty()
     {
         $query = Attraction::query();
-        if ($this->search)      $query->where('name', 'like', "%{$this->search}%");
+        if ($this->search)      $query->whereRaw('LOWER(name) LIKE ?', ['%' . mb_strtolower($this->search) . '%']); // case-insensitive on Postgres too
         if ($this->destination) $query->where('destination', $this->destination);
         return $query->orderBy('name')->get();
     }

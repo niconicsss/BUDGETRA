@@ -331,7 +331,6 @@
             <i class="fa-solid fa-xmark"></i>
         </button>
     </div>
-    <p style="font-size:14px;color:var(--muted);margin-top:10px;">We'll use this to estimate your trip expenses.</p>
 </div>
 
 {{-- ── STEP 6: Review ── --}}

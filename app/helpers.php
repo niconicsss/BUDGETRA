@@ -241,6 +241,7 @@ if (! function_exists('notification_meta')) {
             'savings_goal_deposit' => ['style' => 'success', 'icon' => 'fa-coins',                'title' => 'Savings deposit added'],
             'expense_added'        => ['style' => 'neutral', 'icon' => 'fa-receipt',              'title' => 'Receipt scanned and added'],
             'trip_shared'          => ['style' => 'success', 'icon' => 'fa-user-group',           'title' => 'Added to a trip'],
+            'trip_joined'          => ['style' => 'success', 'icon' => 'fa-user-plus',            'title' => 'Someone joined your trip'],
             'group_member_added'   => ['style' => 'neutral', 'icon' => 'fa-user-plus',            'title' => 'Added as a travel companion'],
             'trip_reminder'        => ['style' => 'neutral', 'icon' => 'fa-plane',                'title' => 'Trip reminder'],
             'itinerary_reminder'   => ['style' => 'neutral', 'icon' => 'fa-calendar',             'title' => 'Itinerary reminder'],
