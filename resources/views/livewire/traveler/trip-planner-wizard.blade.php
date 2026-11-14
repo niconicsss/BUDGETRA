@@ -29,7 +29,7 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
    pointer landing on the field. The dropdown/calendar popovers are siblings
    of .pyt-field, not children, so the transform can't drag them along. */
 .pyt-field.is-bad,.pyt-field.is-bad:hover,.pyt-field.is-bad:focus-within{
-    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
+    border-color:var(--danger);box-shadow:none;}
 .pyt-icon{width:32px;height:32px;border-radius:9px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;}
 .pyt-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:var(--muted);margin-bottom:8px;}
 .pyt-value{font-size:16px;font-weight:600;color:var(--dark);}
@@ -2348,7 +2348,7 @@ window.sortAttractions = function(dir) {
 /* Same required-but-empty treatment as the Trip Details fields. Beats
    :hover/:focus-within so the red survives the pointer landing on it. */
 .ef-field.is-bad,.ef-field.is-bad:hover,.ef-field.is-bad:focus-within{
-    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
+    border-color:var(--danger);box-shadow:none;}
 .ef-clear{margin-left:auto;flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:none;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;line-height:1;padding:0;transition:background .15s,color .15s;}
 .ef-clear:hover{background:var(--border-light);color:var(--dark);}
 .ef-clear:focus-visible{outline:2px solid var(--primary);outline-offset:2px;}
@@ -3785,7 +3785,7 @@ window.sortAttractions = function(dir) {
 .mode-code-btn:hover{background:var(--primary-dark);}
 /* Rejected: candy-red ring. Driven by a class rather than an inline style so
    the state is one thing to set and clear. */
-.mode-code-input.is-bad,.mode-code-input.is-bad:focus{border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
+.mode-code-input.is-bad,.mode-code-input.is-bad:focus{border-color:var(--danger);box-shadow:none;}
 </style>
 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 32px 20px;height:100%;box-sizing:border-box;position:relative;">
 

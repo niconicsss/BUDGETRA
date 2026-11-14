@@ -295,6 +295,14 @@
            display, and 7 day-cell divs stack one per line instead of
            forming a grid. A class-based display isn't touched by that. */
         .itin-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+        /* Same reason as .itin-cal-grid: these carry x-show, which wipes an
+           inline display — the rows fell back to block and the empty dot
+           span collapsed to nothing. */
+        .itin-month-view{flex:1;display:flex;flex-direction:column;}
+        .itin-day-list{display:flex;flex-direction:column;}
+        .itin-ev-list{display:flex;flex-direction:column;gap:10px;}
+        .itin-ev-row{display:flex;align-items:flex-start;gap:9px;}
+        .itin-cal-grid-fill{flex:1;grid-auto-rows:1fr;}
         .itin-cal-grid-wide{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
         .itin-view-btn{-webkit-appearance:none;appearance:none;border:none;outline:none;background:transparent;color:var(--muted);border-radius:8px;padding:7px 16px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;transition:background .15s,color .15s,box-shadow .15s;}
         .itin-view-btn:hover{color:var(--primary);}
@@ -329,7 +337,7 @@
             selDate: '{{ $agendaDate }}',
             showFlight: true, showHotel: true, showFood: true, showActivity: true,
          }"
-         style="display:flex;gap:20px;align-items:flex-start;">
+         style="display:flex;gap:20px;align-items:stretch;">
 
         {{-- ── Sidebar ── --}}
         <div style="width:240px;flex-shrink:0;display:flex;flex-direction:column;gap:16px;">
@@ -393,13 +401,24 @@
                 </div>
             </div>
 
-            {{-- Selected day's events --}}
-            <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+            {{-- Selected day's events. flex:1 so its bottom lines up with the
+                 main calendar when the calendar is the taller column. --}}
+            <div style="flex:1;background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
                 <div style="font-size:12px;font-weight:800;color:var(--dark);margin-bottom:12px;text-align:center;" x-text="selDate==='{{ $agendaDate }}' ? {{ $agendaDate === $todayStr ? "'Today\\'s Events'" : "'Trip Events'" }} : 'Events'"></div>
+                {{-- Each row follows the Categories checkboxes, same as the
+                     calendar chips — flag is resolved from the colour the same
+                     way the month/week/day views do it. --}}
+                @php $catFlag = ['flight' => 'showFlight', 'hotel' => 'showHotel', 'food' => 'showFood', 'activity' => 'showActivity']; @endphp
                 @foreach($itemsByDate as $iDate => $iItems)
-                <div x-show="selDate==='{{ $iDate }}'" style="display:flex;flex-direction:column;gap:10px;">
+                @php
+                    $dayFlags = collect($iItems)
+                        ->map(fn ($it) => $catFlag[array_search($it['color'], $catColor) ?: 'activity'])
+                        ->unique()->values()->all();
+                @endphp
+                <div x-show="selDate==='{{ $iDate }}'" class="itin-ev-list">
                     @foreach($iItems as $it)
-                    <div style="display:flex;align-items:flex-start;gap:9px;">
+                    @php $itFlag = $catFlag[array_search($it['color'], $catColor) ?: 'activity']; @endphp
+                    <div x-show="{{ $itFlag }}" class="itin-ev-row">
                         <span style="width:8px;height:8px;border-radius:50%;background:{{ $it['color'] }};flex-shrink:0;margin-top:4px;"></span>
                         <div style="min-width:0;">
                             <div style="font-size:12px;font-weight:700;color:var(--dark);line-height:1.4;">{{ $it['title'] }}</div>
@@ -407,6 +426,7 @@
                         </div>
                     </div>
                     @endforeach
+                    <p x-show="!({{ implode('||', $dayFlags) }})" style="font-size:12px;color:var(--muted);margin:0;">No events in the selected categories.</p>
                 </div>
                 @endforeach
                 <template x-if="!{{ Illuminate\Support\Js::from(array_keys($itemsByDate)) }}.includes(selDate)">
@@ -416,7 +436,10 @@
         </div>
 
         {{-- ── Main calendar ── --}}
-        <div style="flex:1;min-width:0;background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:24px 28px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
+        {{-- Stretched to the sidebar's height (mini calendar → Trip Events);
+             the month grid takes the leftover space so the rows grow instead
+             of leaving a blank band under them. --}}
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg-white);border:1.5px solid var(--border);border-radius:16px;padding:24px 28px;box-shadow:0 2px 10px rgba(0,0,0,.04);">
 
             {{-- View switch + month navigation --}}
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
@@ -442,7 +465,7 @@
             </div>
 
             {{-- MONTH VIEW --}}
-            <div x-show="view==='month'">
+            <div x-show="view==='month'" class="itin-month-view">
                 <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;">
                     @foreach(['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as $wd)
                     <div style="text-align:center;font-size:11px;font-weight:700;color:var(--muted);padding:4px 0;">{{ $wd }}</div>
@@ -453,7 +476,7 @@
                     $firstDowSun = $month->copy()->startOfMonth()->dayOfWeek;
                     $daysInMonth = $month->daysInMonth;
                 @endphp
-                <div x-show="mi === {{ $mIdx }}" class="itin-cal-grid">
+                <div x-show="mi === {{ $mIdx }}" class="itin-cal-grid itin-cal-grid-fill">
                     @for($i = 0; $i < $firstDowSun; $i++)<div style="min-height:88px;min-width:0;"></div>@endfor
                     @for($d = 1; $d <= $daysInMonth; $d++)
                     @php
@@ -548,7 +571,7 @@
             {{-- DAY VIEW — full agenda for the selected date --}}
             <div x-show="view==='day'">
                 @foreach($itemsByDate as $iDate => $iItems)
-                <div x-show="selDate==='{{ $iDate }}'" style="display:flex;flex-direction:column;">
+                <div x-show="selDate==='{{ $iDate }}'" class="itin-day-list">
                     @foreach($iItems as $it)
                     @php $cat = array_search($it['color'], $catColor) ?: 'activity'; @endphp
                     <div x-show="show{{ ucfirst($cat === 'hotel' ? 'Hotel' : ($cat==='food'?'Food':($cat==='flight'?'Flight':'Activity'))) }}"
@@ -789,9 +812,8 @@ $titleIconMap = [
                     <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600;">
                         <i class="fa-regular fa-clock" style="font-size:10px;"></i> {{ $item->start_datetime->format('g:i A') }}
                     </div>
-                    @if($item->notes)
-                    <div style="display:inline-block;margin-top:6px;padding:3px 9px;border-radius:8px;background:var(--bg);font-size:11px;color:var(--text);">{{ $item->notes }}</div>
-                    @endif
+                    {{-- Title and time only — the notes/description box was
+                         removed from this modal on request. --}}
                 </div>
                 <button wire:click="deleteItem({{ $item->id }})" class="day-modal-remove" style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;flex-shrink:0;border-radius:8px;margin-top:2px;" title="Remove">
                     <i class="fa-solid fa-xmark" style="font-size:12px;"></i>

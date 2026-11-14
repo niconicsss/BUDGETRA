@@ -15,12 +15,8 @@
     .edit-receipt-preview span { font-size: 13px; font-weight: 600; color: var(--text); }
     .edit-receipt-preview i { color: var(--primary); margin-right: 4px; }
 
-    /* .is-invalid is already used to flag failed server-side validation on
-       every form in this app, but was never actually given a style anywhere
-       — the class did nothing. This also backs the new inline (client-side,
-       as-you-type) validation added on this page. */
-    .form-control.is-invalid { border-color: var(--danger); }
-    .form-control.is-invalid:focus { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(220,38,38,0.12); }
+    /* .is-invalid (server-side and the inline validation below) is styled
+       app-wide — see .form-control.is-invalid in style.css. */
 </style>
 @endpush
 

@@ -64,15 +64,8 @@
     }
     .exp-back i { font-size: 11px; }
 
-    /* Empty-on-submit gets the same treatment as the trip planner's Trip
-       Details fields: a candy-red ring, so the eye lands on the field that
-       needs fixing. Beats :focus so the red survives the pointer arriving on
-       the input. */
-    .form-control.is-invalid,
-    .form-control.is-invalid:focus {
-        border-color: #FF3B3B;
-        box-shadow: 0 0 0 3px rgba(255,59,59,0.20);
-    }
+    /* Empty-on-submit: the app-wide .form-control.is-invalid in style.css
+       (plain red border, no ring) covers the inputs here. */
 
     /* ── Themed select ─────────────────────────────────────────
        A native <select> hands its option list to the browser/OS to
@@ -127,7 +120,7 @@
     /* is-invalid / ocr-filled land on the hidden native <select>; the ring
        belongs on the visible trigger beside it. */
     .exp-select-native.is-invalid + .exp-select-trigger {
-        border-color: #FF3B3B; box-shadow: 0 0 0 3px rgba(255,59,59,0.20);
+        border-color: var(--danger); box-shadow: none;
     }
     .exp-select-native.ocr-filled + .exp-select-trigger { border-color: var(--primary); background: var(--primary-light); }
 

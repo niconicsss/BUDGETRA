@@ -45,7 +45,7 @@
 /* Required-but-empty on a Next Step. The ring carries it on its own — these
    used to shake as well, which is gone everywhere in the app now. */
 .pb-input-wrap.is-bad,.pb-input-wrap.is-bad:focus-within{
-    border-color:#FF3B3B;box-shadow:0 0 0 3px rgba(255,59,59,.20);}
+    border-color:var(--danger);box-shadow:none;}
 .pb-input{border:none;background:transparent;font-size:14px;font-weight:700;color:var(--dark);outline:none;width:100%;}
 /* #C4B8AC, not var(--muted): this is .pyt-placeholder's colour from the trip
    planner, and these fields are meant to read as the same control. */

@@ -673,6 +673,12 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
    One class rather than one per surface — the nav icons already drifted into
    three copies of their own colour rule and this is the same shape of bug. */
 .brand-mark { filter: brightness(0) invert(1); }
+/* budgetra.png is a black mark on an OPAQUE white square, so .brand-mark would
+   turn the whole square white. invert(1) makes it white-on-black instead, and
+   screen blending drops the black — only the white lines survive over the
+   photo. The blend needs the photo in the same stacking context, so the
+   wrapper around it must not set a z-index. */
+.brand-mark-opaque { filter: invert(1); mix-blend-mode: screen; }
 .btn:disabled { opacity: .45; cursor: not-allowed; }
 
 /* ── Auth forms: two weights of "this field needs you" ──────────────────
@@ -707,8 +713,11 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity: 1; }
    .is-invalid was already in both auth templates for server-side errors but
    had never been styled anywhere, so a rejected login marked its fields in
    the markup and then showed nothing at all. */
-.auth-wrapper .form-control.is-invalid,
-.auth-wrapper .form-control.is-invalid:focus {
+/* Not scoped to .auth-wrapper: every form in the app flags a failed field
+   with .is-invalid, and they all get this same plain red border — no ring,
+   no fill. Page-level red rings (the old #FF3B3B halo) were removed to match. */
+.form-control.is-invalid,
+.form-control.is-invalid:focus {
   border-color: var(--danger);
   /* Same reason as the hint: otherwise clicking into a field that failed
      gives it the standard brown focus ring. */

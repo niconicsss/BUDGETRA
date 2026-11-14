@@ -22,12 +22,13 @@
     <div class="auth-panel-left-register" style="position:relative;overflow:hidden;padding:0;">
         <div style="position:absolute;inset:0;background-image:url('{{ asset('stockimages/registersidebar.jpg') }}');background-size:cover;background-position:center;filter:blur(3px);transform:scale(1.05);"></div>
         <div style="position:absolute;inset:0;background:rgba(0,0,0,.25);"></div>
-        <div style="position:relative;z-index:2;height:100%;display:flex;align-items:center;justify-content:center;">
-            {{-- budgetraicon.png is a black line mark on transparency, and this panel
-                 is a blurred photo under a dark scrim — so it is painted white
-                 rather than dropped in as-is. See .brand-mark. --}}
-            <img src="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}"
-                 alt="Budgetra" class="brand-mark" style="max-width:200px;width:60%;">
+        <div style="position:relative;height:100%;display:flex;align-items:center;justify-content:center;">
+            {{-- budgetra.png is a black line mark on an opaque white square, and
+                 this panel is a blurred photo under a dark scrim — so it is
+                 inverted and screen-blended to leave only white lines. See
+                 .brand-mark-opaque (and why this wrapper has no z-index). --}}
+            <img src="{{ asset('systemicons/budgetra.png') }}?v={{ filemtime(public_path('systemicons/budgetra.png')) }}"
+                 alt="Budgetra" class="brand-mark-opaque" style="max-width:200px;width:60%;">
         </div>
     </div>
 

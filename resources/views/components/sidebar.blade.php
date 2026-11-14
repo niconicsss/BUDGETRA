@@ -68,7 +68,7 @@
         </button>
     </div>
 
-    <div class="sidebar-brand" style="display:flex;align-items:center;gap:10px;padding:4px 16px 14px;">
+    <div class="sidebar-brand" style="display:flex;align-items:center;gap:28px;padding:4px 16px 14px;">
         {{-- No border-radius any more: that was rounding the corners of a
              square photo tile. This is a transparent line mark, so there is
              no tile to round — and it is painted white by .brand-mark,
