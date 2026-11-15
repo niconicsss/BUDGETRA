@@ -33,7 +33,7 @@ class ProfileTest extends TestCase
         ]);
 
         $response->assertRedirect();
-        $response->assertSessionHas('success');
+        $response->assertSessionHas('toast', 'Profile changed successfully!');
         // full_name is derived from the parts rather than posted directly.
         $this->assertDatabaseHas('users', [
             'id'         => $user->id,

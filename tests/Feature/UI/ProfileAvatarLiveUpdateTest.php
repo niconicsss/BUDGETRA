@@ -156,9 +156,10 @@ class ProfileAvatarLiveUpdateTest extends TestCase
         $this->assertStringContainsString('id="profileForm"', $html);
         $this->assertStringContainsString('budgetraSyncAvatar', $html);
 
-        // Saving confirms itself by the spinner giving way and the avatar and
-        // name repainting — there is deliberately no success toast.
-        $this->assertStringNotContainsString('profileSavedToast', $html);
+        // A name-only save confirms itself by repainting in place; there is no
+        // generic "Profile updated" message.
         $this->assertStringNotContainsString('Profile updated', $html);
     }
+
+    // The "Profile changed successfully!" pill is covered in SuccessToastTest.
 }

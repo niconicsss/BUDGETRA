@@ -325,6 +325,10 @@
     </div>
 </div>
 
+{{-- Shared lower-right pill (components/toast.blade.php); Save Changes
+     triggers it through window.budgetraToast(). --}}
+<x-toast id="profileToast" />
+
 {{-- Inline rather than pushed: this view renders under layouts.admin for an
      admin account, and that layout has no @stack('scripts') to push into. --}}
 <script>
@@ -493,8 +497,10 @@
             var picker = document.getElementById('profile_photo');
             if (picker) picker.value = '';
 
-            // No success toast: the spinner giving way to "Save Changes" is the
-            // confirmation, along with the avatar and name repainting in place.
+            // Every successful save, photo or name: the lower-right pill.
+            if (typeof window.budgetraToast === 'function') {
+                window.budgetraToast('Profile changed successfully!', 'profileToast');
+            }
         }
 
         form.addEventListener('submit', function (e) {

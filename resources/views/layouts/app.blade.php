@@ -82,6 +82,9 @@
             </div>
         </div>
     </div>
+    {{-- Lower-right success pill for anything flashed as 'toast' (e.g. a
+         trip import). Outside .dash-content so nothing can clip it. --}}
+    <x-toast :message="session('toast')" />
     @livewireScripts
     @stack('scripts')
     @if (session()->pull('collapse_sidebar'))

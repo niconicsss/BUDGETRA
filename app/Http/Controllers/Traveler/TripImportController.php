@@ -23,7 +23,10 @@ class TripImportController extends Controller
 
         $joined = $importer->joinTrip($sourceTrip, auth()->user());
 
-        return redirect()->route('saved-trips')->with('success',
-            $joined ? 'You joined the trip!' : "You're already a member of this trip.");
+        // Same split as the share-code box in the planner: a new trip gets the
+        // floating pill, an existing membership the inline note.
+        return $joined
+            ? redirect()->route('saved-trips')->with('toast', 'Trip added successfully!')
+            : redirect()->route('saved-trips')->with('success', "You're already a member of this trip.");
     }
 }

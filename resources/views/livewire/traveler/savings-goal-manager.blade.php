@@ -123,7 +123,7 @@
                 <div style="font-size:22px;font-weight:800;color:#C8874A;line-height:1.2;">{{ $this->displayAmount($saved) }}</div>
                 @if($destSaved)
                 <div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:3px;" title="Destination currency equivalent">
-                    ≈ {{ $destSaved }} <span style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase;">{{ $destCode }}</span>
+                    ≈ {{ $destSaved }}
                 </div>
                 @endif
             </div>
@@ -132,7 +132,7 @@
                 <div style="font-size:22px;font-weight:800;color:var(--dark);line-height:1.2;">{{ $this->displayAmount($targetCost) }}</div>
                 @if($destTarget)
                 <div style="font-size:12px;font-weight:600;color:var(--muted);margin-top:3px;" title="Destination currency equivalent">
-                    ≈ {{ $destTarget }} <span style="font-size:10px;font-weight:700;color:var(--primary);text-transform:uppercase;">{{ $destCode }}</span>
+                    ≈ {{ $destTarget }}
                 </div>
                 @endif
             </div>

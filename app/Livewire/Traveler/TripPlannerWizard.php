@@ -91,7 +91,13 @@ class TripPlannerWizard extends Component
             $this->draftTripId = null;
         }
 
-        session()->flash('success', $joined ? 'You joined the trip!' : "You're already a member of this trip.");
+        // A new trip gets the floating lower-right pill (<x-toast> in the
+        // layout); already being a member stays an inline note on the page.
+        if ($joined) {
+            session()->flash('toast', 'Trip added successfully!');
+        } else {
+            session()->flash('success', "You're already a member of this trip.");
+        }
         $this->redirect(route('saved-trips'), navigate: true);
     }
 
