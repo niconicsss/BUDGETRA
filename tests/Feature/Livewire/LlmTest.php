@@ -2598,6 +2598,220 @@ class LlmTest extends TestCase
         $this->assertSame('Sat', date('D', $start));
     }
 
+    /**
+     * Fakes the narrow two-provider call dateRangeFromAi() makes. Groq is first
+     * in PROVIDER_ORDER, so that is the one that answers; everything else fails
+     * so the test can't accidentally pass via another provider.
+     */
+    private function fakeDateReader(?string $from, ?string $to = null): void
+    {
+        $body = json_encode(['date_from' => $from, 'date_to' => $to]);
+
+        Http::fake([
+            'api.groq.com/*' => Http::response(['choices' => [['message' => ['content' => $body]]]], 200),
+            '*'              => Http::response([], 500),
+        ]);
+    }
+
+    private function invokeDateRangeFromAi(string $text): ?array
+    {
+        $method = (new \ReflectionClass(Llm::class))->getMethod('dateRangeFromAi');
+        $method->setAccessible(true);
+
+        return $method->invoke(new Llm(), $text);
+    }
+
+    public function test_a_worded_date_during_confirmation_is_read_by_the_ai(): void
+    {
+        $user = User::factory()->create();
+
+        // parseDateRange() only matches numeric days, so this reply reaches the
+        // provider fallback instead of being refused outright.
+        $start = strtotime('+40 days');
+        $this->fakeDateReader(date('M j, Y', $start));
+
+        $component = $this->withAllSlotsFilled(
+            Livewire::actingAs($user)->test(Llm::class)
+        )->set('aiPrompt', 'please continue')->call('automateTrip');
+
+        $component->set('aiPrompt', 'change dates to Aug Three twenty twenty six')
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', date('M j', $start));
+        $component->assertSet('aiDateTo', date('M j, Y', $start + 5 * 86400));
+        $this->assertStringContainsString(
+            'Got it, updated!',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    public function test_date_range_from_ai_defaults_a_lone_start_date_to_six_days(): void
+    {
+        auth()->login(User::factory()->create());
+
+        $start = strtotime('+40 days');
+        $this->fakeDateReader(date('M j, Y', $start));
+
+        $result = $this->invokeDateRangeFromAi('Aug Three twenty twenty six');
+
+        $this->assertNotNull($result);
+        $this->assertSame(date('M j', $start), $result['from']);
+        $this->assertSame(date('M j, Y', $start + 5 * 86400), $result['to']);
+        $this->assertSame(6, $result['days'], 'A lone start date gets the same six-day trip the regex path assumes.');
+    }
+
+    public function test_date_range_from_ai_keeps_an_explicit_end_date(): void
+    {
+        auth()->login(User::factory()->create());
+
+        $start = strtotime('+40 days');
+        $end   = strtotime('+47 days');
+        $this->fakeDateReader(date('M j, Y', $start), date('M j, Y', $end));
+
+        $result = $this->invokeDateRangeFromAi('the first week of next month');
+
+        $this->assertNotNull($result);
+        $this->assertSame(date('M j, Y', $end), $result['to']);
+        $this->assertSame(8, $result['days']);
+    }
+
+    public function test_date_range_from_ai_refuses_a_past_date(): void
+    {
+        auth()->login(User::factory()->create());
+
+        $this->fakeDateReader(date('M j, Y', strtotime('-10 days')));
+
+        $this->assertNull(
+            $this->invokeDateRangeFromAi('Aug Three twenty twenty five'),
+            'A date already gone must be refused, exactly as the numeric path refuses one.'
+        );
+    }
+
+    public function test_date_range_from_ai_returns_null_when_no_provider_answers(): void
+    {
+        auth()->login(User::factory()->create());
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $this->assertNull($this->invokeDateRangeFromAi('Aug Three twenty twenty six'));
+    }
+
+    public function test_a_worded_date_with_no_provider_available_falls_back_to_the_re_ask(): void
+    {
+        $user = User::factory()->create();
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Boracay')
+            ->set('aiTravelers', 2)
+            ->set('aiBudgetMin', 30000)
+            ->set('aiBudgetMax', 30000)
+            ->set('awaitingSlot', 'dates')
+            ->set('aiPrompt', 'Aug Three twenty twenty six')
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', '');
+        $component->assertSet('awaitingSlot', 'dates');
+        $this->assertStringContainsString(
+            'travel dates',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    public function test_a_worded_date_answering_the_dates_question_is_understood(): void
+    {
+        $user = User::factory()->create();
+
+        // Deliberately close to today: extractWithAi() appends date('Y') to
+        // date_from, so a date rolling into January would be read as THIS
+        // January and refused as past. Pre-existing behaviour, untouched here.
+        $start = strtotime('+7 days');
+        if ((int) date('Y', $start) !== (int) date('Y')) {
+            $this->markTestSkipped('Needs a future date inside the current calendar year.');
+        }
+
+        // One date only — which is what a provider returns for "Aug Three
+        // twenty twenty six", and what this path used to throw away.
+        $this->fakeExtraction(['date_from' => date('M j', $start)]);
+
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Boracay')
+            ->set('aiTravelers', 2)
+            ->set('aiBudgetMin', 30000)
+            ->set('aiBudgetMax', 30000)
+            ->set('awaitingSlot', 'dates')
+            ->set('aiPrompt', 'Aug Three twenty twenty six')
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', date('M j', $start));
+        $component->assertSet('aiDateTo', date('M j, Y', $start + 5 * 86400));
+        $component->assertSet('aiDays', 6);
+    }
+
+    public function test_dates_captured_while_another_slot_is_missing_are_echoed_back(): void
+    {
+        $user = User::factory()->create();
+
+        $start = strtotime('+7 days');
+        if ((int) date('Y', $start) !== (int) date('Y')) {
+            $this->markTestSkipped('Needs a future date inside the current calendar year.');
+        }
+
+        $this->fakeExtraction(['date_from' => date('M j', $start)]);
+
+        // Origin is still missing, so there is no confirmation summary to show
+        // the resolved dates back — the echo is the only place the traveller
+        // sees what an interpreted date was understood as.
+        $component = Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiTo', 'Boracay')
+            ->set('aiTravelers', 2)
+            ->set('aiBudgetMin', 30000)
+            ->set('aiBudgetMax', 30000)
+            ->set('awaitingSlot', 'origin')
+            ->set('aiPrompt', 'Aug Three twenty twenty six')
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', date('M j', $start));
+
+        $reply = collect($component->get('messages'))->last()['text'];
+        // Matched without the punctuation so the message stays free to restyle —
+        // this asserts the echo fired, not how it is written.
+        $this->assertStringContainsString('Got your dates', $reply);
+        $this->assertStringContainsString(date('M j', $start), $reply);
+        // The origin question still follows. Matched loosely on purpose: the
+        // traveller didn't answer the question they were asked, so missCount
+        // rises and questionFor() returns its second-attempt wording.
+        $this->assertStringContainsString('city', $reply);
+    }
+
+    public function test_numeric_and_relative_dates_never_reach_a_provider(): void
+    {
+        $user = User::factory()->create();
+
+        // The whole point of trying parseDateRange() first: the common forms stay
+        // instant and offline. If any of these start costing an API call, the
+        // fallback has been wired in front of the regex instead of behind it.
+        foreach (['August 20 to 25', 'Aug 3 2026', 'next week', 'two weeks'] as $phrase) {
+            Http::fake(['*' => Http::response([], 500)]);
+
+            $component = $this->withAllSlotsFilled(
+                Livewire::actingAs($user)->test(Llm::class)
+            )->set('awaitingSlot', 'confirmation')
+                ->set('aiPrompt', 'change dates to ' . $phrase)
+                ->call('automateTrip');
+
+            $this->assertStringContainsString(
+                'Got it, updated!',
+                collect($component->get('messages'))->last()['text'],
+                "\"{$phrase}\" should be handled by the regex, not a provider."
+            );
+            Http::assertNothingSent();
+        }
+    }
+
     public function test_example_destination_stays_domestic_when_the_budget_cannot_reach_abroad(): void
     {
         $user = User::factory()->create();

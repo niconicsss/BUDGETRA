@@ -249,6 +249,7 @@ class Llm extends Component
         $this->placeVerificationFailedSlot = null;
 
         $hadBudgetBefore = $this->aiBudgetMin > 0 || $this->aiBudgetMax > 0;
+        $hadDatesBefore  = $this->aiDateFrom !== '' && $this->aiDateTo !== '';
 
         $this->messages[] = ['role' => 'user', 'text' => $userText];
 
@@ -291,7 +292,7 @@ class Llm extends Component
                 || preg_match('/\bnot interested\b|\bdon\'?t want\b|\bno thanks\b|\bnot (?:that|this) one\b/i', $trimmedReply)) {
                 $this->aiPrompt   = '';
                 $this->messages[] = ['role' => 'assistant', 'text' =>
-                    "No worries! Tell me about the trip you'd like to plan — where would you like to go, and when?"];
+                    "No worries! Tell me about the trip you'd like to plan where would you like to go, and when?"];
                 $this->dispatch('message-added');
                 return;
             }
@@ -675,7 +676,7 @@ class Llm extends Component
 
         if ($classification === 'off_topic') {
             $this->messages[] = ['role' => 'assistant', 'text' =>
-                "I'm a Travel Assistant, so I can only help with travel-related questions. If you need help planning a trip, finding destinations, estimating costs, or creating an itinerary, I'd be happy to assist!"];
+                "I'm your Travel Assistant! I can help you plan trips, find places to visit, estimate travel costs, and create itineraries. If you have any travel plans or questions, feel free to ask me!"];
             $this->dispatch('message-added');
             return;
         }
@@ -713,7 +714,7 @@ class Llm extends Component
                 $this->pendingPlaceSuggestion !== null && $this->pendingPlaceSuggestionSlot === $stillMissing
                     => "Did you mean \"{$this->pendingPlaceSuggestion}\"?",
                 $this->placeVerificationFailed && $this->placeVerificationFailedSlot === $stillMissing
-                    => "I'm having trouble verifying that place right now — could you try again in a moment, or double-check the spelling?",
+                    => "I can't find that place right now. Could you double check the spelling?",
                 default => $this->questionFor($stillMissing, $this->missCount),
             };
 
@@ -722,6 +723,19 @@ class Llm extends Component
                 && $previouslyAwaiting !== 'budget';
             if ($budgetJustCaptured) {
                 $reply = "Got your budget of {$this->formattedBudget()}! " . $reply;
+            }
+
+            // Worded dates are INTERPRETED rather than matched, so the traveler
+            // has to see what was settled on — a misread "Aug Three twenty twenty
+            // six" must be caught here, not discovered on the summary screen.
+            // Skipped when dates were the slot being asked for, because that path
+            // fills the last slot and lands on confirmationSummary(), which
+            // already lists them.
+            $datesJustCaptured = !$hadDatesBefore
+                && $this->aiDateFrom !== '' && $this->aiDateTo !== ''
+                && $previouslyAwaiting !== 'dates';
+            if ($datesJustCaptured) {
+                $reply = "Got your dates — {$this->aiDateFrom} to {$this->aiDateTo}! " . $reply;
             }
 
             if ($isTangentQuestion) {
@@ -750,7 +764,7 @@ class Llm extends Component
             $this->awaitingSlot = 'budget';
             $this->missCount    = 0;
             $this->messages[] = ['role' => 'assistant', 'text' =>
-                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount($this->domesticFloor()) . ')?'];
+                'Your budget might be a little too low for this trip. Could you increase it a bit so I can plan a more realistic itinerary for you? (at least ' . $this->displayAmount($this->domesticFloor()) . ')'];
             $this->dispatch('message-added');
             return;
         }
@@ -830,7 +844,7 @@ class Llm extends Component
 
     private const GREETING_REPLY = "Hello! 😊 How can I help you with your travel plans today?";
 
-    private const PROFANITY_REPLY = "Let's keep things friendly here 🙂 — I'm happy to help plan your trip, just let me know your destination, budget, and dates without the language.";
+    private const PROFANITY_REPLY = "Let's keep things friendly here 🙂 I'm happy to help plan your trip, just let me know your destination, budget, and dates without the language.";
 
     private const PROVIDER_ORDER = [
         GroqService::class, GeminiService::class, MistralService::class, OpenRouterService::class,
@@ -1167,14 +1181,25 @@ PROMPT;
             }
         }
 
+        // date_to is no longer required. A traveler who names one date ("going
+        // Aug Three") had the provider read it correctly and then had the answer
+        // discarded here, so nothing was filled and TARA re-asked the question it
+        // had just been given an answer to.
         if (($this->aiDateFrom === '' || $this->aiDateTo === '')
-            && !empty($data['date_from']) && !empty($data['date_to'])) {
+            && !empty($data['date_from'])) {
             $tsFrom = strtotime($data['date_from'] . ' ' . date('Y'));
-            $tsTo   = strtotime($data['date_to']);
+            $tsTo   = !empty($data['date_to']) ? strtotime($data['date_to']) : false;
+
+            // Same six-day trip parseDateRange()'s own single-date branch
+            // assumes, so both paths answer a lone start date identically.
+            $soloDate = $tsFrom && $tsTo === false;
+            if ($soloDate) {
+                $tsTo = $tsFrom + 5 * 86400;
+            }
 
             if ($tsFrom && $tsTo && $tsFrom >= strtotime('today')) {
                 $this->aiDateFrom = $data['date_from'];
-                $this->aiDateTo   = $data['date_to'];
+                $this->aiDateTo   = $soloDate ? date('M j, Y', $tsTo) : $data['date_to'];
                 $this->aiDays     = (int) ceil(abs($tsTo - $tsFrom) / 86400) + 1;
             }
         }
@@ -1232,16 +1257,16 @@ PROMPT;
         return match ($slot) {
             'destination' => $this->aiTo !== ''
                 ? "Your destination so far is {$this->aiTo}."
-                : "You haven't told me your destination yet — where would you like to go?",
+                : "You haven't told me your destination yet where would you like to go?",
             'origin' => $this->aiFrom !== ''
                 ? "Your origin so far is {$this->aiFrom}."
-                : "You haven't told me your origin yet — where will you be traveling from?",
+                : "You haven't told me your origin yet where will you be traveling from?",
             'budget' => ($this->aiBudgetMin > 0 || $this->aiBudgetMax > 0)
                 ? "Your budget so far is {$this->formattedBudget()}."
-                : "You haven't told me your budget yet — how much would you like to spend?",
+                : "You haven't told me your budget yet how much would you like to spend?",
             'travelers' => $this->aiTravelers > 0
                 ? "You've told me {$this->aiTravelers} " . \Illuminate\Support\Str::plural('traveler', $this->aiTravelers) . " so far."
-                : "You haven't told me how many travelers yet — how many are going?",
+                : "You haven't told me how many travelers yet how many are going?",
             default => null,
         };
     }
@@ -1306,6 +1331,15 @@ PROMPT;
 
         if ($slot === 'dates') {
             $range = $this->parseDateRange($value);
+            // parseDateRange() matches numeric days only, so a date spelled out
+            // ("Aug Three twenty twenty six") never resolves here — and this is
+            // the one date path with no AI behind it at all, so answering the
+            // dates question in words used to loop forever. Teaching the regex
+            // word-numbers would mean parsing worded YEARS too, which is
+            // genuinely ambiguous ("twenty twenty six" reads as 20/20/6), inside
+            // a ~130-line pattern chain that 200+ tests depend on. The providers
+            // already read these correctly, so ask them instead.
+            $range ??= $this->dateRangeFromAi($value);
             if ($range === null) return false;
             $this->aiDateFrom = $range['from'];
             $this->aiDateTo   = $range['to'];
@@ -1314,6 +1348,91 @@ PROMPT;
         }
 
         return false;
+    }
+
+    /**
+     * Travel dates read out of free text by an AI provider, in the same shape
+     * parseDateRange() returns — so callers can't tell which one answered.
+     *
+     * Only reached once parseDateRange() has already declined, which keeps every
+     * numeric and relative form it understands ("Aug 3 2026", "next week",
+     * "two weeks") on the instant, offline path.
+     */
+    private function dateRangeFromAi(string $text): ?array
+    {
+        if (trim($text) === '') return null;
+
+        $today = date('l, M j, Y');
+
+        $prompt = <<<PROMPT
+        Today is {$today}.
+
+        A traveler was asked for their travel dates and answered: "{$text}"
+
+        The answer may spell numbers out in words — "Aug Three twenty twenty six"
+        means August 3, 2026 — or describe a time frame rather than name a date.
+        Work out the real calendar dates it refers to.
+
+        Rules:
+        - Never return a date earlier than today.
+        - If only one date is given, return it as date_from and leave date_to null.
+        - If you cannot work out a real date at all, return null for both. Do not guess.
+        - Always include the year in both fields.
+
+        Return JSON only, no markdown:
+        {"date_from": "Mon D, YYYY or null", "date_to": "Mon D, YYYY or null"}
+        PROMPT;
+
+        $data = $this->decodeAiJson($this->askDateReader($prompt));
+        if ($data === null || empty($data['date_from'])) return null;
+
+        $tsFrom = strtotime((string) $data['date_from']);
+        if ($tsFrom === false || $tsFrom < strtotime('today')) return null;
+
+        $tsTo = !empty($data['date_to']) ? strtotime((string) $data['date_to']) : false;
+
+        // A lone start date gets the same six-day trip parseDateRange()'s own
+        // single-date branch assumes, rather than being thrown away.
+        if ($tsTo === false || $tsTo < $tsFrom) {
+            $tsTo = $tsFrom + 5 * 86400;
+        }
+
+        return [
+            'from'      => date('M j', $tsFrom),
+            'to'        => date('M j, Y', $tsTo),
+            'days'      => (int) ceil(($tsTo - $tsFrom) / 86400) + 1,
+            // parseDateRange() hands back the text with the date removed; the
+            // whole answer was the date here, so there is nothing left over.
+            'remainder' => '',
+        ];
+    }
+
+    /**
+     * Deliberately narrower than tryProviders(): the first two providers only,
+     * at a 12s timeout each.
+     *
+     * This runs on a path that used to be instant, and on Windows PHP counts
+     * network wait against max_execution_time — an unbounded walk of five
+     * providers is exactly how a slow day turns into an uncatchable fatal. Two
+     * attempts caps the worst case at roughly 24s. A provider that is simply out
+     * of quota answers in well under a second, so it costs nothing to pass.
+     */
+    private function askDateReader(string $prompt): ?string
+    {
+        foreach (array_slice(self::PROVIDER_ORDER, 0, 2) as $class) {
+            try {
+                $raw = (new $class())->generate($prompt, 12);
+            } catch (\Throwable $e) {
+                Log::warning('AI date reader failed', [
+                    'provider' => class_basename($class),
+                    'message'  => $e->getMessage(),
+                ]);
+                continue;
+            }
+            if ($raw) return $raw;
+        }
+
+        return null;
     }
 
     private function tryDestinationAlternatives(string $text): bool
@@ -1737,7 +1856,7 @@ PROMPT;
             $this->missCount        = 0;
             $this->aiPrompt         = '';
             $this->messages[]       = ['role' => 'assistant', 'text' =>
-                'That budget looks too low to plan a real trip — could you give me a more realistic number (at least ' . $this->displayAmount($this->domesticFloor()) . ')?'];
+                'Your budget might be a little too low for this trip. Could you increase it a bit so I can plan a more realistic itinerary for you? (at least ' . $this->displayAmount($this->domesticFloor()) . ')'];
             $this->dispatch('message-added');
             return true;
         }
