@@ -278,11 +278,18 @@ if (!function_exists('system_icon')) {
      * which is what nearly every caller wants. The sidebar's toggle names its
      * two chevrons separately so CSS can choose between them on collapse —
      * see #sidebarToggleIcon in style.css.
+     *
+     * $preferSvg picks systemicons/{name}.svg when that file exists and falls
+     * back to the PNG when it does not, so an icon can be redrawn as an SVG
+     * one at a time. Only the traveler sidebar asks for it so far. The SVGs
+     * are single filled paths, which mask exactly like the PNGs do.
      */
-    function system_icon(string $name, string $var = 'app-icon'): string
+    function system_icon(string $name, string $var = 'app-icon', bool $preferSvg = false): string
     {
-        $path = public_path("systemicons/{$name}.png");
-        $url  = asset("systemicons/{$name}.png");
+        $ext = ($preferSvg && is_file(public_path("systemicons/{$name}.svg"))) ? 'svg' : 'png';
+
+        $path = public_path("systemicons/{$name}.{$ext}");
+        $url  = asset("systemicons/{$name}.{$ext}");
 
         if (is_file($path)) {
             $url .= '?v=' . filemtime($path);

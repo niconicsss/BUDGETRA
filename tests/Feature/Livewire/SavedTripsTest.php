@@ -3,6 +3,7 @@ namespace Tests\Feature\Livewire;
 
 use App\Livewire\Traveler\SavedTrips;
 use App\Models\Expense;
+use App\Models\GroupMember;
 use App\Models\Trip;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -197,5 +198,196 @@ class SavedTripsTest extends TestCase
 
         $this->assertStringContainsString('60,000', $html);
         $this->assertStringNotContainsString('JPY', $html);
+    }
+
+    // ── A member (not the owner) of a group trip ─────────────────────────
+
+    /** @return array{0: User, 1: User, 2: User, 3: Trip} owner, member, other member, trip */
+    private function groupTrip(): array
+    {
+        $owner  = User::factory()->create();
+        $member = User::factory()->create();
+        $other  = User::factory()->create();
+        $trip   = Trip::factory()->create([
+            'user_id' => $owner->id, 'trip_name' => 'Seoul Trip', 'travel_type' => 'Group', 'status' => 'upcoming',
+        ]);
+        GroupMember::create(['trip_id' => $trip->id, 'user_id' => $member->id]);
+        GroupMember::create(['trip_id' => $trip->id, 'user_id' => $other->id]);
+
+        return [$owner, $member, $other, $trip];
+    }
+
+    public function test_member_sees_delete_trip_in_the_card_menu(): void
+    {
+        [, $member] = $this->groupTrip();
+
+        Livewire::actingAs($member)->test(SavedTrips::class)
+            ->assertSee('Delete Trip');
+    }
+
+    public function test_member_edit_modal_hides_type_remove_and_add_controls(): void
+    {
+        [, $member, , $trip] = $this->groupTrip();
+
+        Livewire::actingAs($member)->test(SavedTrips::class)
+            ->call('openEditName', $trip->id)
+            ->assertSet('editIsOwner', false)
+            ->assertSee('Group Members')
+            ->assertDontSee('title="Remove member"', false)
+            ->assertDontSee('wire:click="lookupMember"', false)
+            ->assertDontSee("\$set('editType'", false);
+    }
+
+    public function test_owner_edit_modal_keeps_type_remove_and_add_controls(): void
+    {
+        [$owner, , , $trip] = $this->groupTrip();
+
+        Livewire::actingAs($owner)->test(SavedTrips::class)
+            ->call('openEditName', $trip->id)
+            ->assertSet('editIsOwner', true)
+            ->assertSee('title="Remove member"', false)
+            ->assertSee('wire:click="lookupMember"', false)
+            ->assertSee("\$set('editType'", false);
+    }
+
+    public function test_member_save_changes_only_name_and_status(): void
+    {
+        [, $member, $other, $trip] = $this->groupTrip();
+
+        Livewire::actingAs($member)->test(SavedTrips::class)
+            ->call('openEditName', $trip->id)
+            ->set('editNameValue', 'Renamed by member')
+            ->set('editStatus', 'active')
+            ->set('editType', 'Solo')          // would drop everyone if honoured
+            ->call('saveEditName');
+
+        $trip->refresh();
+        $this->assertSame('Renamed by member', $trip->trip_name);
+        $this->assertSame('active', $trip->getRawOriginal('status'));
+        $this->assertSame('Group', $trip->travel_type);
+        $this->assertSame(2, GroupMember::where('trip_id', $trip->id)->count());
+    }
+
+    public function test_member_cannot_remove_or_add_members(): void
+    {
+        [, $member, $other, $trip] = $this->groupTrip();
+        $stranger = User::factory()->create();
+
+        Livewire::actingAs($member)->test(SavedTrips::class)
+            ->call('openEditName', $trip->id)
+            ->call('removeSavedMember', $other->id)
+            ->set('memberEmail', $stranger->email)
+            ->call('lookupMember')
+            ->assertSet('pendingMembers', []);
+
+        $this->assertTrue(GroupMember::where('trip_id', $trip->id)->where('user_id', $other->id)->exists());
+    }
+
+    public function test_member_delete_removes_only_them_and_keeps_the_trip(): void
+    {
+        [, $member, $other, $trip] = $this->groupTrip();
+
+        Livewire::actingAs($member)->test(SavedTrips::class)
+            ->call('confirmDelete', $trip->id)
+            ->assertSet('deleteIsLeave', true)
+            ->assertSee('and also the trip will be removed from Saved Trips.')
+            ->call('deleteTrip')
+            ->assertDontSee('Seoul Trip');
+
+        $this->assertNotNull(Trip::find($trip->id));
+        $this->assertFalse(GroupMember::where('trip_id', $trip->id)->where('user_id', $member->id)->exists());
+        $this->assertTrue(GroupMember::where('trip_id', $trip->id)->where('user_id', $other->id)->exists());
+    }
+
+    public function test_last_member_leaving_turns_the_trip_back_to_solo(): void
+    {
+        $owner  = User::factory()->create();
+        $member = User::factory()->create();
+        $trip   = Trip::factory()->create(['user_id' => $owner->id, 'travel_type' => 'Group', 'num_travelers' => 2]);
+        GroupMember::create(['trip_id' => $trip->id, 'user_id' => $member->id]);
+
+        Livewire::actingAs($member)->test(SavedTrips::class)
+            ->call('confirmDelete', $trip->id)
+            ->call('deleteTrip');
+
+        $trip->refresh();
+        $this->assertSame('Solo', $trip->travel_type);
+        $this->assertSame(1, (int) $trip->num_travelers);
+
+        // And the owner's card says so.
+        $html = Livewire::actingAs($owner)->test(SavedTrips::class)->html();
+        $this->assertStringContainsString('SOLO', $html);
+        $this->assertStringNotContainsString('>GROUP<', $html);
+    }
+
+    public function test_a_member_leaving_while_others_remain_keeps_it_group(): void
+    {
+        [, $member, , $trip] = $this->groupTrip();
+
+        Livewire::actingAs($member)->test(SavedTrips::class)
+            ->call('confirmDelete', $trip->id)
+            ->call('deleteTrip');
+
+        $this->assertSame('Group', $trip->fresh()->travel_type);
+    }
+
+    public function test_owner_removing_the_last_member_turns_the_trip_back_to_solo(): void
+    {
+        $owner  = User::factory()->create();
+        $member = User::factory()->create();
+        $trip   = Trip::factory()->create(['user_id' => $owner->id, 'travel_type' => 'Group', 'num_travelers' => 2]);
+        GroupMember::create(['trip_id' => $trip->id, 'user_id' => $member->id]);
+
+        Livewire::actingAs($owner)->test(SavedTrips::class)
+            ->call('openEditName', $trip->id)
+            ->assertSet('editType', 'Group')
+            ->call('removeSavedMember', $member->id)
+            ->assertSet('editType', 'Solo')
+            ->call('saveEditName');
+
+        $trip->refresh();
+        $this->assertSame('Solo', $trip->travel_type);
+        $this->assertSame(1, (int) $trip->num_travelers);
+    }
+
+    public function test_planner_group_trip_without_app_members_is_left_alone(): void
+    {
+        // A Group trip straight from the planner: four travellers, none of
+        // them app accounts. Opening and saving Edit Trip must not touch it.
+        $owner = User::factory()->create();
+        $trip  = Trip::factory()->create(['user_id' => $owner->id, 'travel_type' => 'Group', 'num_travelers' => 4]);
+
+        Livewire::actingAs($owner)->test(SavedTrips::class)
+            ->call('openEditName', $trip->id)
+            ->call('saveEditName');
+
+        $trip->refresh();
+        $this->assertSame('Group', $trip->travel_type);
+        $this->assertSame(4, (int) $trip->num_travelers);
+    }
+
+    public function test_owner_delete_still_deletes_the_trip(): void
+    {
+        [$owner, , , $trip] = $this->groupTrip();
+
+        Livewire::actingAs($owner)->test(SavedTrips::class)
+            ->call('confirmDelete', $trip->id)
+            ->assertSet('deleteIsLeave', false)
+            ->assertSee('will be permanently deleted')
+            ->call('deleteTrip');
+
+        $this->assertNull(Trip::find($trip->id));
+    }
+
+    public function test_outsider_cannot_open_delete_for_someone_elses_trip(): void
+    {
+        [, , , $trip] = $this->groupTrip();
+        $stranger = User::factory()->create();
+
+        Livewire::actingAs($stranger)->test(SavedTrips::class)
+            ->call('confirmDelete', $trip->id)
+            ->assertSet('deleteTripId', null);
+
+        $this->assertNotNull(Trip::find($trip->id));
     }
 }

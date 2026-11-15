@@ -23,7 +23,9 @@ class AuthInvalidFieldTest extends TestCase
     private function invalidRules(): array
     {
         preg_match_all(
-            '/\.auth-wrapper \.form-control\.is-invalid[^{]*\{([^}]*)\}/s',
+            // App-wide since every form flags failed fields the same way —
+            // no longer scoped to .auth-wrapper.
+            '/^\.form-control\.is-invalid[^{]*\{([^}]*)\}/ms',
             $this->css(),
             $m
         );

@@ -452,6 +452,13 @@ class TripPlannerWizard extends Component
     /** The most trips.budget_limit — decimal(10,2) — can physically hold. */
     private const MAX_PESO_BUDGET = 99_999_999.99;
     public bool   $emergencyConverted  = false;
+    /**
+     * The emergency fund exactly as typed, in budgetCurrency(). Only read once
+     * $emergency has been turned into pesos (see emergencyInBudgetCurrency()):
+     * dividing the rounded pesos back out misses the typed figure by a unit or
+     * two in a low-value currency such as rupiah.
+     */
+    public float  $emergencyLocal      = 0;
     public bool    $showCurrencyConvertModal = false;
     /** Declining is an answer — don't re-prompt on a second run at the summary. */
     public bool    $currencyConversionAsked  = false;
@@ -1782,12 +1789,11 @@ class TripPlannerWizard extends Component
         [$this->manualFrom, $this->manualTo] = [$this->manualTo, $this->manualFrom];
     }
 
-    // The emergency fund input has no currency awareness of its own — a
-    // traveler whose trip came from TARA in a foreign currency (tripCurrency,
-    // carried over via the AI handoff) types a raw number meaning THAT
-    // currency, not pesos. Convert it here, once, before it's used anywhere
-    // else in this component (subtracted from the budget, added to totals,
-    // saved to the trip) — all of which already assume pesos throughout.
+    // The emergency fund is typed in budgetCurrency() — the TARA trip's
+    // currency, else the traveller's own — not pesos. confirmEmergencyFund()
+    // converts it once, before it's used anywhere else in this component
+    // (added to totals, saved to the trip), all of which assume pesos. A new
+    // amount typed afterwards has to be converted afresh.
     public function updatedEmergency(): void
     {
         $this->emergencyConverted = false;
@@ -1856,6 +1862,94 @@ class TripPlannerWizard extends Component
         return $this->budgetCurrencySymbol() . number_format($pesoAmount / $rate);
     }
 
+    /**
+     * The two ends of the Budget Range on Generate Itinerary, both in
+     * budgetCurrency(): the budget from Profile Builder, then the trip budget
+     * from step 1 plus the emergency fund.
+     *
+     * Each is shown as the traveller typed it wherever it was typed in this
+     * same currency. Both used to go through pesos: the profile budget came
+     * back at today's rate, so ¥500,000 read ¥499,387, and the step-1 budget,
+     * which is typed in this currency and never was pesos, was converted a
+     * second time and inflated by the exchange rate.
+     *
+     * @return array{0: string, 1: string}
+     */
+    public function budgetRangeLabels(): array
+    {
+        $code    = $this->budgetCurrency();
+        $asTyped = fn (float $amount): string => $this->budgetCurrencySymbol() . number_format($amount);
+        $profile = auth()->user()?->userProfile;
+
+        if ($profile && (float) $profile->daily_budget_local > 0 && $profile->daily_budget_currency === $code) {
+            $low = $asTyped((float) $profile->daily_budget_local);
+        } elseif ($profile && (float) $profile->daily_budget > 0) {
+            // Only the pesos are in this currency's terms: a Philippine
+            // profile (exact), or one typed in another currency than this
+            // trip's, which has to be converted.
+            $low = $this->budgetDisplayAmount((float) $profile->daily_budget);
+        } else {
+            $low = $asTyped($this->typedAmount($this->manualBudgetMin));
+        }
+
+        $tripBudget = $this->typedAmount($this->manualBudgetMax ?: $this->manualBudgetMin);
+        $high       = $asTyped($tripBudget > 0 ? $tripBudget + $this->emergencyInBudgetCurrency() : 0);
+
+        return [$low, $high];
+    }
+
+    /**
+     * confirmEmergencyFund() turns a fund typed in any currency but pesos into
+     * pesos. Before that, or for a peso trip, $emergency is still the typed
+     * figure, already in budgetCurrency().
+     */
+    private function emergencyInBudgetCurrency(): float
+    {
+        return $this->emergencyConverted ? $this->emergencyLocal : (float) $this->emergency;
+    }
+
+    /**
+     * The step-1 trip budget in pesos, or null when no live rate is reachable.
+     *
+     * manualBudgetMin/Max hold what was typed, in budgetCurrency(). Prices, the
+     * ₱ budget the AI is given and every total are pesos, so anything weighing
+     * the budget against them goes through here rather than reading the typed
+     * digits, which only mean pesos for a peso trip.
+     */
+    public function tripBudgetPesos(): ?float
+    {
+        return $this->budgetInPesos($this->typedAmount($this->manualBudgetMax ?: $this->manualBudgetMin));
+    }
+
+    /** The digits of a typed amount, separators and symbols dropped. */
+    private function typedAmount(string $raw): float
+    {
+        return (float) preg_replace('/[^\d.]/', '', $raw);
+    }
+
+    /**
+     * [min, max] in pesos for the AI: the Profile Builder budget (stored in
+     * pesos) or else the low end typed on step 1, then the step-1 budget.
+     * Null when the typed figures can't be converted — no guessed rates.
+     */
+    private function itineraryBudgetBounds(): ?array
+    {
+        $profileBudget = (float) (auth()->user()?->userProfile?->daily_budget ?? 0);
+
+        $min = $profileBudget > 0 ? $profileBudget : $this->budgetInPesos($this->typedAmount($this->manualBudgetMin));
+        $max = $this->tripBudgetPesos();
+        if ($min === null || $max === null) return null;
+
+        // The emergency fund is set aside SEPARATELY from this budget (added
+        // on top of it at the end), not carved out of it — so the full
+        // entered amount stays available for actually planning the trip.
+        $max = max(500, (int) round($max));
+        $min = (int) round($min);
+        if ($min >= $max) $min = (int) round($max * 0.8);
+
+        return [$min, $max];
+    }
+
     public function tripDisplayAmount(int|float $pesoAmount): string
     {
         $code = $this->displayCurrency();
@@ -1903,8 +1997,18 @@ class TripPlannerWizard extends Component
         // case the traveler sees is gated in Alpine's submit() on step 6,
         // which flags the field and never calls this method.
 
-        if (!$this->emergencyConverted && $this->tripCurrency !== '' && $this->tripCurrency !== 'PHP' && $this->emergency > 0) {
-            $rate = (new CurrencyConverterService())->rateToPhp($this->tripCurrency);
+        // Captured before any conversion, while $emergency is still the typed
+        // figure. An already-converted fund keeps the figure captured with it.
+        if (!$this->emergencyConverted) {
+            $this->emergencyLocal = (float) $this->emergency;
+        }
+
+        // Typed in budgetCurrency(), like the step-1 budget: the TARA trip's
+        // currency, else the traveller's own. This used to check tripCurrency
+        // alone, so a fund typed by hand in yen went on as that many pesos.
+        $code = $this->budgetCurrency();
+        if (!$this->emergencyConverted && $code !== 'PHP' && $this->emergency > 0) {
+            $rate = (new CurrencyConverterService())->rateToPhp($code);
             if ($rate === null) {
                 $this->emergencyError = "I couldn't fetch the live exchange rate just now — please try again in a moment.";
                 return;
@@ -2183,12 +2287,15 @@ class TripPlannerWizard extends Component
         $profileBudget = (int) ($profile?->daily_budget ?? 0);
         $interests     = array_merge($profile?->interests ?? [], $profile?->sub_interests ?? []);
 
-        $budMin  = $profileBudget > 0 ? $profileBudget : (int) preg_replace('/[^\d]/', '', $this->manualBudgetMin);
-        // The emergency fund is set aside SEPARATELY from this budget (added
-        // on top of it at the end), not carved out of it — so the full
-        // entered amount stays available for actually planning the trip.
-        $budMax  = max(500, (int) preg_replace('/[^\d]/', '', $this->manualBudgetMax ?: $this->manualBudgetMin));
-        if ($budMin >= $budMax) $budMin = (int) round($budMax * 0.8);
+        // Pesos, like every price it's weighed against. With no live rate there
+        // is no honest budget to give the AI, so stop: step 8 then shows its
+        // "Try Again" state instead of an itinerary planned for the wrong sum.
+        $bounds = $this->itineraryBudgetBounds();
+        if ($bounds === null) {
+            $this->aiLoading = false;
+            return;
+        }
+        [$budMin, $budMax] = $bounds;
 
         // Calculate how much the traveler already spent on selections
         $selectionCost = 0;
@@ -2284,12 +2391,12 @@ class TripPlannerWizard extends Component
         $profileBudget = (int) ($profile?->daily_budget ?? 0);
         $interests     = array_merge($profile?->interests ?? [], $profile?->sub_interests ?? []);
 
-        // Min = profile preferred budget; Max = trip total entered in wizard.
-        // Same as generateItinerary() — the emergency fund is separate, not
-        // subtracted from what's available to actually plan the trip with.
-        $budMin = $profileBudget > 0 ? $profileBudget : (int) preg_replace('/[^\d]/', '', $this->manualBudgetMin);
-        $budMax = max(500, (int) preg_replace('/[^\d]/', '', $this->manualBudgetMax ?: $this->manualBudgetMin));
-        if ($budMin >= $budMax) $budMin = (int) round($budMax * 0.8);
+        // Min = profile preferred budget; Max = trip total entered in wizard,
+        // both in pesos. Same as generateItinerary(). No rate, no regenerate:
+        // the itinerary on screen stays rather than one priced against a guess.
+        $bounds = $this->itineraryBudgetBounds();
+        if ($bounds === null) return;
+        [$budMin, $budMax] = $bounds;
         $dest   = trim($this->manualTo ?: $this->mcTo ?: 'Unknown');
 
         // Subtract traveler selection costs to get remaining AI budget
@@ -2446,7 +2553,9 @@ class TripPlannerWizard extends Component
         $attrCost   = $attrBase1   + $attrBase2;
 
         $emergency = (float) $this->emergency;
-        $budget    = (int) preg_replace('/[^\d]/', '', $this->manualBudgetMax ?: $this->manualBudgetMin);
+        // Pesos, like every other figure the PDF prints with a peso sign. 0
+        // (no rate) leaves the "(Budget: …)" note off rather than mislabel it.
+        $budget    = (int) round($this->tripBudgetPesos() ?? 0);
         $total     = $flightCost + $hotelCost + $venueCost + $attrCost + $aiCost + $emergency;
 
         $picks = [];

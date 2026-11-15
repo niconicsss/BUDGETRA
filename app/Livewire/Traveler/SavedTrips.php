@@ -10,6 +10,7 @@ use App\Services\TripImportService;
 use App\Support\PlaceCatalog;
 use Carbon\Carbon;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Component;
 
 #[Layout('layouts.app', ['active' => 'saved-trips'])]
@@ -18,6 +19,12 @@ class SavedTrips extends Component
     public ?int $detailTripId   = null;
     public ?int $deleteTripId   = null;
     public string $deleteTripName = '';
+    // True when the person deleting is a member rather than the owner: for
+    // them "Delete Trip" takes them off the trip and leaves it standing for
+    // everyone else. Drives the confirmation wording only — deleteTrip()
+    // decides from the database, not from this.
+    #[Locked]
+    public bool $deleteIsLeave = false;
     public ?int $editNameTripId  = null;
     public string $editNameValue = '';
     public string $editType      = 'Solo';
@@ -27,6 +34,11 @@ class SavedTrips extends Component
     public array  $pendingMembers = [];
     public array  $savedMembers   = [];
     public array  $tripOwner      = [];
+    // Members can rename the trip and change its status, nothing else — no
+    // Type switch, no adding or removing people. UI flag only; every action
+    // re-checks ownership itself.
+    #[Locked]
+    public bool $editIsOwner = true;
     public ?int $shareTripId    = null;
     public string $shareCode    = '';
     public string $shareLink    = '';
@@ -45,8 +57,10 @@ class SavedTrips extends Component
     public function confirmDelete(int $id): void
     {
         $trip = Trip::find($id);
+        if (!$this->canEditTrip($trip)) return;
         $this->deleteTripId   = $id;
         $this->deleteTripName = $trip->trip_name ?? $trip->destination ?? 'this trip';
+        $this->deleteIsLeave  = !$this->ownsTrip($trip);
     }
 
     public function openEditName(int $id): void
@@ -56,6 +70,7 @@ class SavedTrips extends Component
         // The owner and every member of the trip can edit it.
         if (!$this->canEditTrip($trip)) return;
         $this->editNameTripId = $id;
+        $this->editIsOwner    = $this->ownsTrip($trip);
         $this->editNameValue = $trip->trip_name ?? $trip->destination ?? '';
         $hasMembers          = GroupMember::where('trip_id', $id)->exists();
         // A trip with members is a group trip whatever travel_type says —
@@ -82,6 +97,30 @@ class SavedTrips extends Component
         return $user?->profile_photo ? \Illuminate\Support\Facades\Storage::url($user->profile_photo) : null;
     }
 
+    /**
+     * A group trip whose last member has just left or been removed is the
+     * owner's alone again, so it goes back to Solo with one head — the same
+     * reset as switching it to Solo in Edit Trip. Otherwise the owner's card
+     * keeps saying GROUP and the bill keeps splitting between people who are
+     * no longer on it.
+     *
+     * Only called when a member actually leaves. A Group trip from the
+     * planner that never had app members is left alone: its num_travelers is
+     * a real head count, not leftovers. Returns whether it reverted.
+     */
+    private function revertToSoloIfAlone(Trip $trip): bool
+    {
+        if (GroupMember::where('trip_id', $trip->id)->exists()) return false;
+
+        $trip->update(['travel_type' => 'Solo', 'num_travelers' => 1]);
+        return true;
+    }
+
+    private function ownsTrip(?Trip $trip): bool
+    {
+        return $trip !== null && $trip->user_id === auth()->id();
+    }
+
     private function canEditTrip(?Trip $trip): bool
     {
         if (!$trip) return false;
@@ -92,6 +131,8 @@ class SavedTrips extends Component
     public function lookupMember(): void
     {
         $this->memberError = '';
+        // Only the owner adds people.
+        if (!$this->editNameTripId || !$this->ownsTrip(Trip::find($this->editNameTripId))) return;
         $email = trim($this->memberEmail);
         if ($email === '') return;
 
@@ -121,16 +162,33 @@ class SavedTrips extends Component
 
     public function removeSavedMember(int $userId): void
     {
-        if (!$this->editNameTripId || !$this->canEditTrip(Trip::find($this->editNameTripId))) return;
-        GroupMember::where('trip_id', $this->editNameTripId)->where('user_id', $userId)->delete();
+        // Only the owner removes people; a member leaves through Delete Trip.
+        if (!$this->editNameTripId || !$this->ownsTrip(Trip::find($this->editNameTripId))) return;
+        $trip = Trip::find($this->editNameTripId);
+        GroupMember::where('trip_id', $trip->id)->where('user_id', $userId)->delete();
         $this->savedMembers = array_values(array_filter($this->savedMembers, fn($m) => $m['id'] !== $userId));
+
+        // That was the last member: the trip is back to Solo now, whether or
+        // not the modal is saved. The Type switch follows (it is entangled)
+        // unless someone new is already queued to be added.
+        if ($this->revertToSoloIfAlone($trip) && empty($this->pendingMembers)) {
+            $this->editType = 'Solo';
+        }
     }
 
     public function saveEditName(): void
     {
         if (!$this->editNameTripId || trim($this->editNameValue) === '') return;
         $trip = Trip::find($this->editNameTripId);
-        if ($trip && $this->canEditTrip($trip)) {
+        if ($trip && $this->canEditTrip($trip) && !$this->ownsTrip($trip)) {
+            // A member: name and status only. Type and the member list are
+            // the owner's to change, whatever the request carried.
+            $trip->update([
+                'trip_name' => trim($this->editNameValue),
+                'status'    => $this->editStatus,
+            ]);
+            $trip->savingsGoals()->update(['goal_name' => trim($this->editNameValue) ?: $trip->destination]);
+        } elseif ($trip && $this->ownsTrip($trip)) {
             $trip->update([
                 'trip_name'   => trim($this->editNameValue),
                 'travel_type' => $this->editType,
@@ -168,6 +226,7 @@ class SavedTrips extends Component
         $this->pendingMembers  = [];
         $this->savedMembers    = [];
         $this->tripOwner       = [];
+        $this->editIsOwner     = true;
     }
 
     public function cancelEditName(): void
@@ -181,12 +240,14 @@ class SavedTrips extends Component
         $this->pendingMembers  = [];
         $this->savedMembers    = [];
         $this->tripOwner       = [];
+        $this->editIsOwner     = true;
     }
 
     public function cancelDelete(): void
     {
         $this->deleteTripId   = null;
         $this->deleteTripName = '';
+        $this->deleteIsLeave  = false;
     }
 
     public function openShare(int $id): void
@@ -228,14 +289,21 @@ class SavedTrips extends Component
     {
         if (!$this->deleteTripId) return;
         $trip = Trip::find($this->deleteTripId);
-        if ($trip && $trip->user_id === auth()->id()) {
+        if ($this->ownsTrip($trip)) {
             $trip->delete();
+        } elseif ($trip) {
+            // A member's "Delete Trip" removes only them. The trip, and
+            // everyone else on it, is untouched; it simply drops out of
+            // this traveller's Saved Trips.
+            GroupMember::where('trip_id', $trip->id)->where('user_id', auth()->id())->delete();
+            $this->revertToSoloIfAlone($trip);
         }
         if ($this->detailTripId === $this->deleteTripId) {
             $this->detailTripId = null;
         }
         $this->deleteTripId   = null;
         $this->deleteTripName = '';
+        $this->deleteIsLeave  = false;
     }
 
     /**

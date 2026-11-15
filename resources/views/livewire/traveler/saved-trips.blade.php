@@ -28,7 +28,12 @@
 .st-member-row-saved{background:var(--bg);}
 .st-member-row-pending{background:color-mix(in srgb, var(--primary) 10%, var(--bg-white));border:1px solid var(--border);}
 .st-member-avatar{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:12px;font-weight:700;color:#fff;}
-.st-member-avatar-saved{background:var(--muted);}
+/* Saved members: a tint of the theme's accent with the initial in the accent
+   itself — warm brown on Original, indigo on Nightflight. It used to be
+   var(--muted), a cool grey that sat off-palette on Original and put white
+   text on light grey (~2.4:1) on Nightflight. Pending stays solid --primary,
+   so the two still read apart. */
+.st-member-avatar-saved{background:var(--primary-light);color:var(--primary);}
 .st-member-avatar-pending{background:var(--primary);}
 .st-member-avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;}
 .st-member-name{font-size:13px;font-weight:600;color:var(--dark);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -36,9 +41,9 @@
 .st-member-remove{
     flex-shrink:0;width:28px;height:28px;border:none;border-radius:8px;cursor:pointer;
     display:flex;align-items:center;justify-content:center;
-    background:color-mix(in srgb, #DC2626 14%, var(--bg-white));color:#DC2626;transition:background .18s;
+    background:color-mix(in srgb, var(--danger) 14%, var(--bg-white));color:var(--danger);transition:background .18s;
 }
-.st-member-remove:hover{background:color-mix(in srgb, #DC2626 26%, var(--bg-white));}
+.st-member-remove:hover{background:color-mix(in srgb, var(--danger) 26%, var(--bg-white));}
 </style>
 
     {{-- The !$search guard this used to carry is no longer needed: the
@@ -229,11 +234,11 @@
                         <button wire:click="openEditName({{ $trip->id }})" @click="open=false">
                             <i class="fa-regular fa-pen-to-square"></i> Edit Trip
                         </button>
-                        @unless ($trip->shared_with_me)
+                        {{-- Members get it too: for them it takes them off the
+                             trip rather than deleting it (see deleteTrip()). --}}
                         <button wire:click="confirmDelete({{ $trip->id }})" @click="open=false" class="card-menu-danger">
                             <i class="fa-regular fa-trash-can"></i> Delete Trip
                         </button>
-                        @endunless
                     </div>
                 </div>
                 {{-- Share button, directly below the kebab menu --}}
@@ -477,7 +482,11 @@
                 </div>
                 <div style="font-size:19px;font-weight:800;color:var(--dark);margin-bottom:8px;">Delete Trip?</div>
                 <div style="font-size:13px;color:var(--muted);line-height:1.6;max-width:280px;margin:0 auto;">
+                    @if ($deleteIsLeave)
+                    You'll be removed from <strong style="color:var(--dark);">{{ $deleteTripName }}</strong> and also the trip will be removed from Saved Trips.
+                    @else
                     <strong style="color:var(--dark);">{{ $deleteTripName }}</strong> will be permanently deleted.<br>This action cannot be undone.
+                    @endif
                 </div>
             </div>
             {{-- Actions --}}
@@ -502,7 +511,9 @@
     {{-- Edit Trip Modal --}}
     @if ($editNameTripId)
     <div style="position:fixed;inset:0;background:rgba(0,0,0,0.55);backdrop-filter:blur(4px);z-index:2100;display:flex;align-items:center;justify-content:center;padding:20px;">
-        <div x-data="{ type: '{{ $editType }}', removing: null }" style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:24px;width:100%;max-width:400px;padding:26px;max-height:90vh;overflow-y:auto;animation:stModalPop .22s cubic-bezier(.34,1.56,.64,1);">
+        {{-- type is entangled with editType so a server-side change shows up
+             here: removing the last member flips the trip back to Solo. --}}
+        <div x-data="{ type: $wire.entangle('editType'), removing: null }" style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:24px;width:100%;max-width:400px;padding:26px;max-height:90vh;overflow-y:auto;animation:stModalPop .22s cubic-bezier(.34,1.56,.64,1);">
 
             {{-- Header --}}
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;">
@@ -545,7 +556,9 @@
                        onfocus="this.style.borderColor='var(--primary)';this.style.boxShadow='0 0 0 4px rgba(147,75,25,0.08)'" onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
             </div>
 
-            {{-- Travel Type --}}
+            {{-- Travel Type — owner only. A member can rename the trip and
+                 set its status; switching it to Solo would drop everyone. --}}
+            @if ($editIsOwner)
             <div style="margin-bottom:16px;">
                 <div style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:7px;">Type</div>
                 <div style="display:flex;gap:8px;">
@@ -560,6 +573,7 @@
                     @endforeach
                 </div>
             </div>
+            @endif
 
             {{-- Group members (only when Group type) --}}
             <div x-show="type === 'Group'" x-transition style="margin-bottom:16px;">
@@ -585,12 +599,16 @@
                         <div class="st-member-name">{{ $sm['name'] }}</div>
                         <div class="st-member-email">{{ $sm['email'] }}</div>
                     </div>
-                                        <button @click="removing = { id: {{ $sm['id'] }}, name: @js($sm['name']) }" type="button" class="st-member-remove" title="Remove member">
+                    {{-- Owner only — a member sees the list but can't change it. --}}
+                    @if ($editIsOwner)
+                    <button @click="removing = { id: {{ $sm['id'] }}, name: @js($sm['name']) }" type="button" class="st-member-remove" title="Remove member">
                         <i class="fa-solid fa-xmark" style="font-size:11px;"></i>
                     </button>
+                    @endif
                 </div>
                 @endforeach
 
+                @if ($editIsOwner)
                 {{-- Pending (newly added) members --}}
                 @foreach($pendingMembers as $pi => $pm)
                 <div class="st-member-row st-member-row-pending">
@@ -605,7 +623,7 @@
                 </div>
                 @endforeach
 
-                                {{-- Email lookup input --}}
+                {{-- Email lookup input --}}
                 <div style="display:flex;gap:8px;margin-top:6px;">
                     <input wire:model="memberEmail" type="email" placeholder="Enter member's email address"
                            wire:keydown.enter.prevent="lookupMember"
@@ -621,6 +639,7 @@
                 <div style="margin-top:6px;font-size:12px;color:#DC2626;">{{ $memberError }}</div>
                 @endif
                 <div style="margin-top:6px;font-size:11px;color:var(--muted);">Only registered users can be added as members.</div>
+                @endif
             </div>
 
             {{-- Status --}}
@@ -643,11 +662,14 @@
                         onmouseenter="this.style.background='var(--border-light)';this.style.borderColor='var(--border)'" onmouseleave="this.style.background='transparent';this.style.borderColor='var(--border)'">
                     Cancel
                 </button>
-                                <button wire:click="saveEditName"
+                {{-- Spinner while the save is in flight, same as Delete above;
+                     disabled meanwhile so a second click can't send it twice. --}}
+                <button wire:click="saveEditName" wire:loading.attr="disabled" wire:target="saveEditName"
                         style="flex:1;background:var(--primary);color:#fff;border:none;border-radius:12px;padding:12px 0;font-size:13px;font-weight:700;cursor:pointer;font-family:'Hanken Grotesk',sans-serif;transition:background .18s,transform .12s;"
                         onmouseenter="this.style.background='var(--primary-dark)'" onmouseleave="this.style.background='var(--primary)'"
                         onmousedown="this.style.transform='scale(.97)'" onmouseup="this.style.transform='scale(1)'">
-                    Save
+                    <span wire:loading.remove wire:target="saveEditName">Save</span>
+                    <span wire:loading wire:target="saveEditName" aria-label="Saving…"><i class="fa-solid fa-spinner fa-spin"></i></span>
                 </button>
             </div>
 

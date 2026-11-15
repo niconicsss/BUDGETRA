@@ -86,12 +86,13 @@ class AuthValidationHighlightTest extends TestCase
         // at the field, the label names it, the message says why.
         $this->assertStringContainsString('.auth-wrapper .form-group:has(.form-control.is-invalid) .form-label', $css);
         $this->assertMatchesRegularExpression(
-            '/\.auth-wrapper \.form-control\.is-invalid,\s*\.auth-wrapper \.form-control\.is-invalid:focus \{\s*border-color: var\(--danger\);[^}]*box-shadow: none;\s*\}/s',
+            // App-wide now, so the selector is no longer under .auth-wrapper.
+            '/^\.form-control\.is-invalid,\s*\.form-control\.is-invalid:focus \{\s*border-color: var\(--danger\);[^}]*box-shadow: none;\s*\}/ms',
             $css
         );
         // No wash, no coloured ring.
         $this->assertDoesNotMatchRegularExpression(
-            '/\.auth-wrapper \.form-control\.is-invalid[^{]*\{[^}]*background/s',
+            '/^\.form-control\.is-invalid[^{]*\{[^}]*background/ms',
             $css
         );
         $this->assertStringNotContainsString(

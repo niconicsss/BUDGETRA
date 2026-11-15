@@ -140,14 +140,13 @@
 
         {{-- Currency Conversion Badge --}}
         @if($hasConversion && $rateLabel)
-        <div style="background:var(--bg);border:1px dashed var(--border);border-radius:12px;padding:9px 12px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;">
-            <div style="display:flex;align-items:center;gap:6px;color:var(--dark);font-weight:600;">
-                <i class="fa-solid fa-arrow-right-arrow-left" style="color:var(--primary);font-size:11px;"></i>
+        {{-- Themed in style.css (.sg-rate) — tinted from each theme's primary. --}}
+        <div class="sg-rate">
+            <div class="sg-rate-label">
+                <i class="fa-solid fa-arrow-right-arrow-left"></i>
                 <span>{{ $rateLabel }}</span>
             </div>
-            <span style="background:var(--primary-light);color:var(--primary);font-weight:700;padding:2px 8px;border-radius:99px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;">
-                {{ $destCode }}
-            </span>
+            <span class="sg-rate-code">{{ $destCode }}</span>
         </div>
         @endif
 

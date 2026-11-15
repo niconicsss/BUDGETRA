@@ -88,15 +88,23 @@ class CardMenuThemingTest extends TestCase
         }
     }
 
-    public function test_the_delete_row_uses_the_themed_danger_colour(): void
+    public function test_the_delete_row_uses_the_themed_cherry_colour(): void
     {
-        // --danger is already tuned per theme (#DC2626 light, #F87171 dark,
-        // the latter specifically because the darker red fails contrast on
-        // that surface). A hardcoded red throws that away.
-        $this->assertMatchesRegularExpression(
-            '/\.card-menu-danger, \.card-menu-danger i \{ color: var\(--danger\); \}/',
-            $this->css()
-        );
+        // Delete Trip turns cherry red on hover, keyboard focus and press.
+        // --cherry is tuned per theme (#BE1E2D light, #FF7C97 dark, the latter
+        // because the deeper red fails contrast on that surface). A hardcoded
+        // red throws that away.
+        $css = $this->css();
+
+        foreach (['hover', 'focus-visible', 'active'] as $state) {
+            $this->assertStringContainsString(".card-menu button.card-menu-danger:{$state}", $css);
+        }
+        $this->assertMatchesRegularExpression('/color: var\(--cherry\);/', $css);
+
+        foreach (['original', 'nightflight'] as $theme) {
+            preg_match('/\[data-theme="' . $theme . '"\] \{(.*?)\n\}/s', $css, $m);
+            $this->assertStringContainsString('--cherry:', $m[1], "{$theme} is missing --cherry");
+        }
     }
 
     public function test_no_hardcoded_light_colours_remain_in_the_card_menu(): void

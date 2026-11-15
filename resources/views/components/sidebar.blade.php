@@ -64,7 +64,7 @@
                  Deliberately not swapped in JS: the direction used to be set by
                  assigning className in three separate places, and they drifted. --}}
             <i class="app-icon" id="sidebarToggleIcon"
-               style="{{ system_icon('left-chevron', 'chevron-left') }};{{ system_icon('right-chevron', 'chevron-right') }}"></i>
+               style="{{ system_icon('left-chevron', 'chevron-left', true) }};{{ system_icon('right-chevron', 'chevron-right', true) }}"></i>
         </button>
     </div>
 
@@ -85,7 +85,7 @@
         <a href="{{ $link['href'] }}" wire:navigate data-segment="{{ $link['segment'] }}"
            class="sidebar-link {{ $active === $link['key'] ? 'active' : '' }}"
            title="{{ $link['label'] }}">
-            <x-nav-icon :icon="$link['icon']" />
+            <x-nav-icon :icon="$link['icon']" :svg="true" />
             <span class="sidebar-link-label">{{ $link['label'] }}</span>
             {{-- Tied to the key above: this is what puts the unread count on
                  the bell, and it fails silently if the two drift apart. --}}
@@ -132,7 +132,7 @@
                           data-user-avatar data-avatar-img-class="sidebar-profile-avatar">{{ $profileInitials }}</span>
                     @endif
                 @else
-                <x-nav-icon :icon="$link['icon']" />
+                <x-nav-icon :icon="$link['icon']" :svg="true" />
                 @endif
                 <span class="sidebar-link-label">{{ $link['label'] }}</span>
             </a>
@@ -144,7 +144,7 @@
             <form method="POST" action="{{ route('logout') }}" style="margin:0;">
                 @csrf
                 <button type="submit" class="sidebar-link sidebar-logout-link" style="width:100%;background:none;border:none;cursor:pointer;text-align:left;" title="Logout">
-                    <x-nav-icon icon="logout" />
+                    <x-nav-icon icon="logout" :svg="true" />
                     <span class="sidebar-link-label">Logout</span>
                 </button>
             </form>

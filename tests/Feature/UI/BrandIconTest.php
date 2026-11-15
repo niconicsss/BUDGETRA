@@ -92,8 +92,16 @@ class BrandIconTest extends TestCase
         foreach (['/login', '/register'] as $url) {
             $html = $this->get($url)->getContent();
 
-            $this->assertStringContainsString('class="brand-mark"', $html, $url);
-            $this->assertStringContainsString('alt="Budgetra"', $html, $url);
+            // budgetra.png — a black mark on an opaque white square — so it
+            // takes .brand-mark-opaque (invert + screen blend), not .brand-mark.
+            $this->assertMatchesRegularExpression(
+                '/<img src="[^"]*systemicons\/budgetra\.png\?v=\d+"\s+alt="Budgetra" class="brand-mark-opaque"/',
+                $html,
+                $url
+            );
+            // The screen blend needs the photo in the same stacking context:
+            // the wrapper around the mark must not set a z-index.
+            $this->assertStringNotContainsString('position:relative;z-index:2;height:100%', $html, $url);
             // The old photo is gone from both.
             $this->assertStringNotContainsString('budgetraicon-modified.png', $html, $url);
         }

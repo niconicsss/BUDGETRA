@@ -44,7 +44,10 @@ class SystemIconsTest extends TestCase
     {
         $html = $this->actingAs($this->traveler())->get('/dashboard')->getContent();
 
-        $this->assertStringContainsString("systemicons/{$name}.png", $html);
+        // The sidebar uses the SVG where one has been drawn, the PNG otherwise.
+        $ext = is_file(public_path("systemicons/{$name}.svg")) ? 'svg' : 'png';
+
+        $this->assertStringContainsString("systemicons/{$name}.{$ext}", $html);
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('sidebarIcons')]
@@ -69,7 +72,9 @@ class SystemIconsTest extends TestCase
     #[\PHPUnit\Framework\Attributes\DataProvider('chevrons')]
     public function test_both_chevrons_are_served(string $name): void
     {
-        $this->assertFileExists(public_path("systemicons/{$name}.png"));
+        // The toggle draws the SVG; the source folder keeps an identical copy.
+        $this->assertFileExists(public_path("systemicons/{$name}.svg"));
+        $this->assertFileEquals(public_path("systemicons/{$name}.svg"), base_path("systemicons/{$name}.svg"));
     }
 
     public function test_the_toggle_carries_both_chevrons(): void
@@ -79,7 +84,7 @@ class SystemIconsTest extends TestCase
         $html = $this->actingAs($this->traveler())->get('/dashboard')->getContent();
 
         $this->assertMatchesRegularExpression(
-            '/id="sidebarToggleIcon"\s+style="--chevron-left:url\([^)]*left-chevron\.png[^)]*\);--chevron-right:url\([^)]*right-chevron\.png[^)]*\)"/s',
+            '/id="sidebarToggleIcon"\s+style="--chevron-left:url\([^)]*left-chevron\.svg[^)]*\);--chevron-right:url\([^)]*right-chevron\.svg[^)]*\)"/s',
             $html
         );
         $this->assertStringContainsString('class="app-icon" id="sidebarToggleIcon"', $html);

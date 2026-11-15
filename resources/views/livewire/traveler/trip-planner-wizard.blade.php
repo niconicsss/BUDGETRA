@@ -2378,7 +2378,10 @@ window.sortAttractions = function(dir) {
             display: '',
             bad: false,
             init() {
-                if ($wire.emergency) this.display = Number($wire.emergency).toLocaleString('en-PH');
+                // Once confirmed, $emergency is pesos. Coming back here shows
+                // what was typed, in the currency the field is labelled with.
+                const typed = $wire.emergencyConverted ? $wire.emergencyLocal : $wire.emergency;
+                if (typed) this.display = Number(typed).toLocaleString('en-PH');
             },
             format(e) {
                 // 12, not 7 — this field is typed in the trip's currency (see
@@ -2419,6 +2422,8 @@ window.sortAttractions = function(dir) {
                 <div style="width:44px;height:44px;border-radius:12px;background:var(--primary-light);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
                     <i class="fa-solid fa-piggy-bank" style="color:var(--primary);font-size:19px;"></i>
                 </div>
+                {{-- Same currency as the step-1 budget, and labelled the same way. --}}
+                <span class="ef-currency" style="font-size:20px;font-weight:700;color:var(--muted);flex-shrink:0;">{{ $this->budgetCurrencySymbol() }}</span>
                 <input type="text" x-model="display" @input="format($event)" placeholder="Please input amount"
                        class="emergency-fund-input" x-ref="amount"
                        style="border:none;background:transparent;font-size:20px;font-weight:700;color:var(--dark);outline:none;width:100%;"
@@ -2516,34 +2521,12 @@ window.sortAttractions = function(dir) {
     $mcSd = $mcStartDate ? \Carbon\Carbon::parse($mcStartDate)->format('F j, Y') : '—';
     $mcEd = $mcEndDate   ? \Carbon\Carbon::parse($mcEndDate)->format('F j, Y')   : '—';
 
-    $budMaxRaw = (int) preg_replace('/[^\d]/', '', $manualBudgetMax ?: $manualBudgetMin);
-    $budMaxRaw = $budMaxRaw ?: 0;
-
-    // First value = profile preferred budget (daily_budget from Profile Builder).
-    // Only fall back to the trip's own min budget when the profile value is
-    // genuinely unset — NOT when it happens to be >= the trip's total budget,
-    // which used to collapse both numbers to the same figure: daily_budget is
-    // a PER-DAY rate while budMaxRaw is the trip's TOTAL budget, so comparing
-    // them directly is an apples-to-oranges unit mismatch, not a real signal
-    // that the profile value is unusable.
-    $budMinRaw = (int) ($profile?->daily_budget ?? 0);
-    if ($budMinRaw <= 0) {
-        $budMinRaw = (int) preg_replace('/[^\d]/', '', $manualBudgetMin);
-    }
-
-    // The stored figures above are always pesos; this only changes how they
-    // are SHOWN. It used to convert on tripCurrency alone, which is only set
-    // when a trip is handed over from TARA — so a manually planned trip fell
-    // through to a peso sign no matter what country the traveller registered
-    // with. budgetDisplayAmount() asks budgetCurrency(), which is the trip's
-    // currency when there is one and the traveller's own otherwise, the same
-    // answer the budget field on step 1 is labelled with.
-    //
-    // The emergency fund is set aside SEPARATELY from the trip budget (added
-    // on top of it), not carved out of it — so the top end of this range is
-    // the trip budget PLUS the emergency fund.
-    $budMin = $this->budgetDisplayAmount($budMinRaw);
-    $budMax = $this->budgetDisplayAmount($budMaxRaw ? $budMaxRaw + $emergency : 0);
+    // First value = the budget from Profile Builder; second = the step-1 trip
+    // budget PLUS the emergency fund (set aside on top of it, not carved out).
+    // Both in budgetCurrency() — the trip's currency when it came from TARA,
+    // the traveller's own otherwise — and as typed, not re-converted. The
+    // rule lives in the component so this card can't drift from it.
+    [$budMin, $budMax] = $this->budgetRangeLabels();
 @endphp
 {{-- The back link is a sibling of the centred block, not a child of it:
      inside, justify-content:center dragged it down the page with the card,
@@ -2700,7 +2683,9 @@ window.sortAttractions = function(dir) {
     $ed8 = ($isLeg2Now ? $mcEndDate   : $endDate)   ? \App\Livewire\Traveler\TripPlannerWizard::fmtDate($isLeg2Now ? $mcEndDate   : $endDate)   : '—';
     $dest8Label = $isLeg2Now ? trim($mcTo) : trim($manualTo);
 
-    $budMax8      = (int) preg_replace('/[^\d]/', '', $manualBudgetMax ?: $manualBudgetMin);
+    // Pesos, like $totalCost8 it is weighed against: the typed figure is in
+    // the traveller's currency. 0 (no live rate) skips the budget check.
+    $budMax8      = (int) round($this->tripBudgetPesos() ?? 0);
     $profileMin8  = (int) ($profile8?->daily_budget ?? 0);
     $budMin8      = ($profileMin8 > 0 && $profileMin8 < $budMax8) ? $profileMin8 : (int) round($budMax8 * 0.7);
     $budLabel8    = $budMin8 ? ($this->tripDisplayAmount($budMin8) . ($budMax8 && $budMax8 !== $budMin8 ? ' – ' . $this->tripDisplayAmount($budMax8) : '')) : '—';
@@ -3399,7 +3384,9 @@ window.sortAttractions = function(dir) {
     $s9attr   = $s9attr1   + $s9attr2;
 
     $s9emergency = (float) $emergency;
-    $s9budget    = (int) preg_replace('/[^\d]/', '', $manualBudgetMax ?: $manualBudgetMin);
+    // Pesos, like $s9total: the typed figure is in the traveller's currency,
+    // and tripDisplayAmount() below expects pesos. 0 (no rate) hides the line.
+    $s9budget    = (int) round($this->tripBudgetPesos() ?? 0);
     $s9total     = $s9flight + $s9hotel + $s9venue + $s9attr + $s9emergency;
     $s9over      = $s9budget > 0 && $s9total > $s9budget;
 

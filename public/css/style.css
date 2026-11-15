@@ -57,6 +57,10 @@
   --surface-raised: #FFFFFF;
   --menu-hover: #F3F4F6;
   --menu-hover-danger: #FEF2F2;
+  /* Cherry red — Delete Trip's hover/press state. See .card-menu-danger.
+     Pulled a little warm (toward the brown) so it sits in this palette
+     instead of reading as a stray magenta; 6:1 on white. */
+  --cherry: #BE1E2D;
   --radius: 12px;
   --radius-sm: 8px;
   --radius-lg: 20px;
@@ -89,6 +93,10 @@
   --surface-raised: #FFFFFF;
   --menu-hover: #F3F4F6;
   --menu-hover-danger: #FEF2F2;
+  /* Cherry red — Delete Trip's hover/press state. See .card-menu-danger.
+     Pulled a little warm (toward the brown) so it sits in this palette
+     instead of reading as a stray magenta; 6:1 on white. */
+  --cherry: #BE1E2D;
 }
 /* :root above is the pre-theme fallback (unauthenticated pages etc).
    Every signed-in page renders one of these blocks explicitly via
@@ -130,6 +138,9 @@
   --surface-raised: #262B38;
   --menu-hover: #2F3545;
   --menu-hover-danger: rgba(248,113,113,.14);
+  /* A rose-leaning cherry that pairs with the indigo accent; 4.5:1 or better
+     on its own tinted hover background. */
+  --cherry: #FF7C97;
 }
 /* Both remaining themes have a dark --sidebar-bg, so the sidebar's
    hardcoded rgba(255,255,255,…) text colors read correctly on both.
@@ -841,6 +852,10 @@ body.dashboard-body {
 .sidebar-link:hover { background: rgba(255,255,255,0.08); color: #fff; }
 .sidebar-link.active { background: rgba(255,255,255,0.15); color: #fff; }
 .sidebar-link i { width: 18px; text-align: center; font-size: 15px; }
+/* The SVG icons draw bigger than the PNG ones (15px → 21px). The box grows to
+   21px to fit, and the negative margins hand the extra 3px back, so the slot
+   still takes 18px and every label starts in the same column. */
+.sidebar-link i.app-icon-svg { font-size: 21px; width: 21px; margin: 0 -1.5px; }
 
 /* Icons drawn from public/systemicons rather than from a font.
 
@@ -971,8 +986,24 @@ body.dashboard-body {
 .card-menu button + button { border-top: 1px solid var(--border); }
 .card-menu button:hover { background: var(--menu-hover); }
 .card-menu button i { font-size: 12px; color: var(--muted); }
-.card-menu-danger, .card-menu-danger i { color: var(--danger); }
-.card-menu-danger:hover { background: var(--menu-hover-danger); }
+/* Delete stays as quiet as its neighbours until it is pointed at, focused or
+   pressed — then text, icon and background all go cherry red. Selectors
+   carry `.card-menu button` so they outrank the neutral rules above; the old
+   plain `.card-menu-danger` lost to them and never showed its red at all. */
+.card-menu button.card-menu-danger { transition: background .15s ease, color .15s ease; }
+.card-menu button.card-menu-danger i { transition: color .15s ease; }
+.card-menu button.card-menu-danger:hover,
+.card-menu button.card-menu-danger:focus-visible,
+.card-menu button.card-menu-danger:active {
+  /* Tint mixed against the menu's own surface, so it is a soft wash of the
+     theme's cherry on Original and on Nightflight alike. */
+  background: color-mix(in srgb, var(--cherry) 10%, var(--surface-raised));
+  color: var(--cherry); outline: none;
+}
+.card-menu button.card-menu-danger:hover i,
+.card-menu button.card-menu-danger:focus-visible i,
+.card-menu button.card-menu-danger:active i { color: var(--cherry); }
+.card-menu button.card-menu-danger:active { background: color-mix(in srgb, var(--cherry) 15%, var(--surface-raised)); }
 
 .sidebar-divider { height: 1px; background: rgba(255,255,255,.08); margin: 6px 12px; }
 .sidebar-divider-brand { margin-left: 24px; margin-right: 24px; }
@@ -1018,6 +1049,7 @@ body.dashboard-body {
   justify-content: center;
 }
 .sidebar-collapsed .sidebar-link i { font-size: 16px; }
+.sidebar-collapsed .sidebar-link i.app-icon-svg { font-size: 22px; width: 22px; margin: 0; }
 .sidebar-collapsed .sidebar-profile-avatar { width: 26px; height: 26px; }
 .sidebar-collapsed .sidebar-profile-avatar-initials { font-size: 11px; }
 .sidebar-collapsed .sidebar-brand { justify-content: center !important; padding: 8px 0 10px !important; margin-top: 0; margin-bottom: 6px; }
@@ -2833,3 +2865,29 @@ body.admin-modal-open { overflow: hidden; }
 .tp-search-go:active{transform:scale(.95);}
 .tp-search-go[disabled]{opacity:.8;cursor:default;transform:none;}
 @media (prefers-reduced-motion:reduce){.tp-search-go:active{transform:none;}}
+
+/* ── Saving goal: exchange-rate badge ("1 TWD ≈ ¥4.85 JPY") ────────────
+   Tinted from each theme's own --primary over the card, so it reads as
+   brown on Original and indigo on Nightflight. It used to be --bg with a
+   dashed grey --border: a cool grey outline on a cream panel on Original,
+   and a panel darker than its card on Nightflight.
+
+   The ink is --primary pulled 20% toward --dark, which goes darker on the
+   light theme and lighter on the dark one — so the small uppercase code
+   clears 4.5:1 on both (6.3 Original, 5.2 Nightflight); plain --primary
+   only reaches 4.3 on the Nightflight pill. */
+.sg-rate {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-bottom: 18px; padding: 9px 12px; border-radius: 12px; font-size: 12px;
+  background: color-mix(in srgb, var(--primary) 7%, var(--bg-white));
+  border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--bg-white));
+  --sg-rate-ink: color-mix(in srgb, var(--primary) 80%, var(--dark));
+}
+.sg-rate-label { display: flex; align-items: center; gap: 6px; min-width: 0; color: var(--dark); font-weight: 600; }
+.sg-rate-label i { color: var(--sg-rate-ink); font-size: 11px; flex-shrink: 0; }
+.sg-rate-code {
+  flex-shrink: 0; padding: 2px 8px; border-radius: 99px;
+  font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  background: color-mix(in srgb, var(--primary) 16%, var(--bg-white));
+  color: var(--sg-rate-ink);
+}
