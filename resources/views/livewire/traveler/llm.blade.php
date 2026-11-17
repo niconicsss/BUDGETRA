@@ -1,9 +1,6 @@
-<div>
+<div x-data
+     x-init="$wire.set('browserTimezone', Intl.DateTimeFormat().resolvedOptions().timeZone, false)">
 
-{{-- History button — floats above every screen state (landing, active
-     chat, loading), since a past conversation should always be
-     reachable regardless of where the current one is at. Hidden on the
-     results screen, where "Back to Chat" already covers going back. --}}
 @unless ($aiStep === 'results' && !empty($aiPackage))
 <button type="button" wire:click="openHistory" title="Past conversations"
         style="position:fixed;top:20px;right:24px;z-index:900;width:38px;height:38px;border-radius:50%;background:var(--bg-white);border:1.5px solid var(--border);color:var(--primary);cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(45,27,20,.08);transition:border-color .15s ease,box-shadow .15s ease;"
@@ -13,9 +10,6 @@
 </button>
 @endunless
 
-{{-- ═══════════════════════════════════════════════════════════════
-     AI PLANNER — results
-═══════════════════════════════════════════════════════════════ --}}
 @if ($aiStep === 'results' && !empty($aiPackage))
 @php
     $pkg    = $aiPackage;
@@ -32,7 +26,6 @@
         </button>
     </div>
 
-    {{-- YOUR REQUEST --}}
     <div style="margin-bottom:24px;">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
             <div style="width:28px;height:28px;border-radius:50%;background:#F5F0EB;display:flex;align-items:center;justify-content:center;">
@@ -59,7 +52,6 @@
         </div>
     </div>
 
-    {{-- Heading --}}
     <div style="margin:0 0 20px;">
         <h2 style="font-size:20px;font-weight:800;color:var(--dark);margin:0;display:flex;align-items:center;gap:10px;">
             <span style="width:28px;height:28px;background:#F5F0EB;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:14px;color:var(--primary);flex-shrink:0;">✦</span>
@@ -67,7 +59,6 @@
         </h2>
     </div>
 
-    {{-- Package cards --}}
     <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:32px;">
 
         @php
@@ -84,12 +75,10 @@
         @if (!empty($sec))
         <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:14px;padding:20px 22px;display:flex;align-items:flex-start;gap:16px;">
 
-            {{-- Icon --}}
             <div style="width:44px;height:44px;border-radius:10px;background:#F5F0EB;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;">
                 <i class="{{ $card['icon'] }}" style="color:var(--primary);font-size:17px;"></i>
             </div>
 
-            {{-- Content --}}
             <div style="flex:1;min-width:0;">
                 <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--muted);margin-bottom:5px;">{{ $card['label'] }}</div>
 
@@ -123,7 +112,6 @@
                 @endif
             </div>
 
-            {{-- Cost --}}
             <div style="text-align:right;flex-shrink:0;min-width:80px;">
                 <button wire:click="editWithWizard('{{ $card['key'] }}')" wire:loading.attr="disabled" wire:target="editWithWizard"
                         title="Edit {{ $card['label'] }}"
@@ -142,7 +130,6 @@
     </div>
 </div>
 
-{{-- ── Bottom bar ── --}}
 <div class="fixed-bottom-bar" style="position:fixed;bottom:0;right:0;background:var(--bg-white);border-top:1.5px solid var(--border);padding:14px 28px;display:flex;align-items:center;gap:20px;z-index:100;transition:left .2s ease;">
     <div style="flex:1;min-width:0;">
         <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;color:var(--muted);margin-bottom:5px;">Estimated Cost (Total)</div>
@@ -173,9 +160,6 @@
 </div>
 @endif
 
-{{-- ═══════════════════════════════════════════════════════════════
-     AI PLANNER — loading / building package
-═══════════════════════════════════════════════════════════════ --}}
 @if ($aiStep === 'loading')
 <style>
     @keyframes aiSpin{to{transform:rotate(360deg)}}
@@ -197,7 +181,6 @@
         </span>
     </p>
 
-    {{-- Skeleton preview of the results cards about to appear --}}
     <div style="width:100%;max-width:520px;margin-top:28px;display:flex;flex-direction:column;gap:12px;">
         @for ($i = 0; $i < 4; $i++)
         <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:14px;padding:20px 22px;display:flex;align-items:center;gap:16px;">
@@ -218,9 +201,6 @@
 @endscript
 @endif
 
-{{-- ═══════════════════════════════════════════════════════════════
-     AI PLANNER — landing / prompt input
-═══════════════════════════════════════════════════════════════ --}}
 @if ($aiStep === '')
 @php
     $greeting = 'Good day, ' . (auth()->user()->first_name ?? '') . '!';
@@ -267,7 +247,6 @@
     </style>
 
     @if (empty($messages))
-        {{-- First-time welcome state: greeting + composer + quick pills --}}
         <div class="llm-fade-up" style="text-align:center;width:100%;max-width:600px;">
 
             <h1 class="llm-greeting">✦ {{ $greeting }}</h1>
@@ -302,7 +281,6 @@
 
         </div>
     @else
-        {{-- Conversation is underway: chat thread + composer pinned below --}}
         <div style="width:100%;height:calc(100vh - 80px);display:flex;flex-direction:column;align-items:center;">
 
             @php
@@ -325,8 +303,6 @@
                     </div>
                 @endforeach
 
-                {{-- Alternative to typing the numbers: opens the form's card
-                     picker, which saves and comes straight back here. --}}
                 @if ($buildingProfile && ($profileDraft['awaiting_slot'] ?? '') === 'interests')
                     <div class="llm-msg-row llm-msg-row-assistant" style="margin-left:36px;">
                         <button type="button" wire:click="pickInterestsInForm" wire:loading.attr="disabled" wire:target="pickInterestsInForm"
@@ -367,9 +343,6 @@
 @endscript
 @endif
 
-{{-- History panel — view-only browsing of past conversations. Self-
-     contained styles (not reusing .llm-msg etc.) since this can be opened
-     from any aiStep, including ones whose own <style> block never rendered. --}}
 @if ($showHistory)
 <div style="position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:2000;display:flex;align-items:center;justify-content:center;padding:20px;" wire:click.self="closeHistory">
     <div style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:18px;width:100%;max-width:480px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;">
@@ -390,7 +363,6 @@
 
         <div style="overflow-y:auto;padding:16px 20px;flex:1;">
             @if ($entry)
-                {{-- Read-only transcript of one past conversation --}}
                 <div style="display:flex;flex-direction:column;gap:10px;">
                     @foreach ($entry->messages as $msg)
                     <div style="max-width:85%;padding:10px 14px;border-radius:14px;font-size:13px;line-height:1.5;
@@ -401,11 +373,7 @@
                     </div>
                     @endforeach
                 </div>
-                {{-- No summary footer. The dates and budget it restated are
-                     already in the transcript above, in the traveller's own
-                     messages and TARA's recap of them. --}}
             @else
-                {{-- List of past conversations --}}
                 @if ($this->conversationHistory->isEmpty())
                 <div style="text-align:center;padding:40px 20px;color:var(--muted);font-size:13px;">
                     <i class="fa-regular fa-comments" style="font-size:28px;display:block;margin-bottom:10px;color:var(--border);"></i>
@@ -417,8 +385,6 @@
                     <div style="background:var(--bg);border:1.5px solid transparent;border-radius:12px;transition:border-color .15s ease;"
                          onmouseenter="this.style.borderColor='var(--primary)'" onmouseleave="this.style.borderColor='transparent'">
                         @if ($historyEntryToDelete === $past->id)
-                        {{-- Inline confirm — kept in the same row instead of stacking a
-                             second modal on top of the one already open. --}}
                         <div style="padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;">
                             <span style="font-size:12px;font-weight:600;color:var(--dark);">Delete this conversation?</span>
                             <div style="display:flex;gap:6px;flex-shrink:0;">
@@ -439,10 +405,6 @@
                                 <div style="font-size:13px;font-weight:700;color:var(--dark);margin-bottom:3px;">
                                     {{ $past->ai_from ?: '—' }} to {{ $past->ai_to ?: '—' }}
                                 </div>
-                                {{-- When the conversation happened, and nothing else.
-                                     The trip's own start/end dates used to trail this
-                                     line, which read as a second date for the same
-                                     entry — they belong to the plan, not to the chat. --}}
                                 <div style="font-size:11px;color:var(--muted);">
                                     {{ $past->created_at->format('M j, Y · g:i A') }}
                                 </div>
@@ -473,12 +435,6 @@
 
 </div>
 
-{{-- Thousand separators while typing, matching the budget field in manual
-     planning. Deliberately only when the whole message is a number: this is a
-     free-text prompt, and grouping every digit run would rewrite "Sept 1 2026"
-     as "Sept 1 2,026", which parseDateRange()/strtotime() cannot read. A bare
-     number is what a budget answer looks like, and the budget parser already
-     accepts separators (parseMoneyToken strips them). --}}
 <script>
 window.budgetraGroupBareNumber = function (el) {
     var raw = el.value;
@@ -488,13 +444,9 @@ window.budgetraGroupBareNumber = function (el) {
     var trail = raw.match(/\s*$/)[0];
     var body  = raw.slice(lead.length, raw.length - trail.length);
 
-    // Count digits before the caret so it can be put back in the same place
-    // once the commas shift everything along.
     var digitsBefore = (raw.slice(0, el.selectionStart).match(/\d/g) || []).length;
 
     var parts = body.replace(/,/g, '').split('.');
-    // Grouped with a regex rather than Number().toLocaleString(), which loses
-    // precision past 15 digits.
     var grouped = parts[0].replace(/^0+(?=\d)/, '').replace(/\B(?=(\d{3})+(?!\d))/g, ',');
     if (parts.length > 1) grouped += '.' + parts[1];
     if (grouped === body) return;
@@ -510,12 +462,6 @@ window.budgetraGroupBareNumber = function (el) {
     }
     el.setSelectionRange(pos, pos);
 
-    // Setting el.value in script does not notify Livewire, so wire:model kept
-    // the raw keystrokes: the box showed "30,000" while the message actually
-    // sent was "3,0000". Re-dispatching input hands it the corrected value.
-    //
-    // This handler is itself bound to input, so this re-enters exactly once —
-    // the second pass finds grouped === body and returns at the guard above.
     el.dispatchEvent(new Event('input', { bubbles: true }));
 };
 </script>

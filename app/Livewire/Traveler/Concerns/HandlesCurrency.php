@@ -4,17 +4,6 @@ namespace App\Livewire\Traveler\Concerns;
 use App\Services\CurrencyConverterService;
 use App\Support\PlaceCatalog;
 
-/**
- * Reading money out of what the traveller typed, converting it into the pesos
- * every money column stores, and rendering it back in their own currency.
- *
- * Only the methods live here. The figures themselves — aiCurrency, aiBudgetMin,
- * aiBudgetMax, aiBudgetLocal — stay declared on the component, because Livewire
- * hydrates public properties there and the slot-filling and package code reads
- * them too. Same for the constants (MAX_BUDGET, SUPPORTED_CURRENCIES,
- * CURRENCY_ALIASES, the international floors): a trait is flattened into the
- * using class, so self:: still resolves.
- */
 trait HandlesCurrency
 {
     private function budgetContextForPrompt(): string
@@ -35,24 +24,11 @@ trait HandlesCurrency
             : $this->displayAmount($this->aiBudgetMin) . ' - ' . $this->displayAmount($this->aiBudgetMax);
     }
 
-    /**
-     * Days to price a trip over — the length once known, otherwise a week, so
-     * a budget can still be judged before dates have been given.
-     */
     private function floorDays(): int
     {
         return $this->aiDays > 0 ? $this->aiDays : 7;
     }
 
-    /**
-     * The least a trip can cost, built the way processAiTrip() already builds
-     * the real package: a ticket each, one room between them, food and local
-     * transport each. Splitting it that way is why four travellers need far
-     * more than one, but not four times as much.
-     *
-     * ROOM + LIVING equals the flat daily rate this replaced, so a solo trip
-     * comes out at exactly the figure it did before travellers were counted.
-     */
     private function tripFloor(int $flightEach, int $roomPerDay, int $livingEach): int
     {
         $days       = $this->floorDays();
@@ -81,13 +57,6 @@ trait HandlesCurrency
         );
     }
 
-    /**
-     * The per-day figure behind "is my budget enough?".
-     *
-     * Derived from the same constants as the gate so the two cannot drift:
-     * advising that 500/day is fine while refusing to plan anything under
-     * 1,000/day would have TARA contradict itself in two messages.
-     */
     private function budgetFloor(): int
     {
         return self::DOMESTIC_ROOM_FLOOR + self::DOMESTIC_LIVING_FLOOR;

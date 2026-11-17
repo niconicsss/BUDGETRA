@@ -40,56 +40,96 @@ class Llm extends Component
     public string $aiDateTo      = '';
     public int    $aiDays        = 0;
     public int    $aiTravelers   = 0;
-
     public string $aiCurrency    = '';
     public array  $aiPackage     = [];
     public int    $aiGenCount    = 0;
-
     public ?int $draftTripId = null;
-
     public array $aiDestinationChoices = [];
-
     public array $messages = [];
-
     public string $awaitingSlot = '';
-
     public int $missCount = 0;
-
     private ?string $ambiguityNotice = null;
-
     private ?string $currencyNotice = null;
-
     private ?string $currencyNoticeLabel = null;
-
     private ?float $currencyNoticePesoAmount = null;
-
     private ?string $unsupportedCurrencyNotice = null;
-
     private ?string $currencyRateUnavailableNotice = null;
-
     public ?string $pendingPlaceSuggestion = null;
-
     public ?string $pendingPlaceSuggestionSlot = null;
-
     public bool $pendingProfileOffer = false;
-
     public string $pendingEditSlot = '';
-
     public array $rejectedDestinations = [];
-
     private array $aiPlaceCache = [];
-
     private bool $placeVerificationFailed = false;
-
     private ?string $placeVerificationFailedSlot = null;
-
     public bool $aiBudgetIsDaily = false;
-
     public ?float $aiBudgetLocal = null;
     public bool  $buildingProfile = false;
     public array $profileDraft    = [];
-
     private bool $pfBudgetBelowFloor = false;
+
+    public string $browserTimezone = '';
+
+    private ?string $pastDateNotice = null;
+
+    private function travellerToday(): \Carbon\Carbon
+    {
+        $tz = in_array($this->browserTimezone, timezone_identifiers_list(), true)
+            ? $this->browserTimezone
+            : display_tz();
+
+        return \Carbon\Carbon::today($tz);
+    }
+
+    private function travellerTodayTs(): int
+    {
+        return (int) strtotime($this->travellerToday()->toDateString());
+    }
+
+    private function startsInThePast(int $timestamp): bool
+    {
+        return $timestamp < $this->travellerTodayTs();
+    }
+
+    private function refusePastStart(int $startTs): bool
+    {
+        if (! $this->startsInThePast($startTs)) return false;
+
+        $this->pastDateNotice = 'That date has already passed. Could you give me a date from today onwards?';
+
+        return true;
+    }
+
+    private function startOnly(int $startTs, string $remainder): array
+    {
+        return [
+            'from'      => date('M j', $startTs),
+            'to'        => '',
+            'days'      => 0,
+            'remainder' => $remainder,
+        ];
+    }
+
+    private const DURATION_WORD_NUMBERS = [
+        'a' => 1, 'an' => 1, 'one' => 1, 'two' => 2, 'three' => 3, 'four' => 4,
+        'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
+        'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14,
+    ];
+
+    private function startDateTimestamp(): ?int
+    {
+        if ($this->aiDateFrom === '') return null;
+
+        $today = $this->travellerToday();
+        $ts    = strtotime($this->aiDateFrom . ' ' . $today->year);
+        if ($ts === false) return null;
+
+        if ($ts < $this->travellerTodayTs()) {
+            $ts = strtotime($this->aiDateFrom . ' ' . ($today->year + 1));
+        }
+
+        return $ts !== false ? $ts : null;
+    }
 
     public function getProfileInterestsProperty(): array
     {
@@ -247,9 +287,10 @@ class Llm extends Component
         $previouslyAwaiting = $this->awaitingSlot;
         $this->placeVerificationFailed = false;
         $this->placeVerificationFailedSlot = null;
+        $this->pastDateNotice = null;
 
         $hadBudgetBefore = $this->aiBudgetMin > 0 || $this->aiBudgetMax > 0;
-        $hadDatesBefore  = $this->aiDateFrom !== '' && $this->aiDateTo !== '';
+        $hadDatesBefore  = $this->aiDateFrom !== '';
 
         $this->messages[] = ['role' => 'user', 'text' => $userText];
 
@@ -460,14 +501,16 @@ class Llm extends Component
                     $this->pendingEditSlot = '';
                     $this->missCount       = 0;
                     $this->aiPrompt        = '';
-                    $this->messages[]      = ['role' => 'assistant', 'text' => 'Got it, updated! ' . $this->confirmationSummary()];
+                    $this->messages[]      = ['role' => 'assistant', 'text' => $this->replyAfterEdit()];
                     $this->dispatch('message-added');
                     return;
                 }
 
                 $this->missCount++;
                 $this->aiPrompt   = '';
-                $this->messages[] = ['role' => 'assistant', 'text' => $this->questionFor($slot, $this->missCount)];
+                $this->messages[] = ['role' => 'assistant', 'text' =>
+                    $this->pastDateNotice ?? $this->questionFor($slot, $this->missCount)];
+                $this->pastDateNotice = null;
                 $this->dispatch('message-added');
                 return;
             }
@@ -493,14 +536,14 @@ class Llm extends Component
                     return;
                 }
                 $this->aiPrompt   = '';
-                $this->messages[] = ['role' => 'assistant', 'text' => 'Got it, updated! ' . $this->confirmationSummary()];
+                $this->messages[] = ['role' => 'assistant', 'text' => $this->replyAfterEdit()];
                 $this->dispatch('message-added');
                 return;
             }
 
             if ($this->pendingEditSlot === '' && $this->applyValueToSlot('dates', $trimmedReply)) {
                 $this->aiPrompt   = '';
-                $this->messages[] = ['role' => 'assistant', 'text' => 'Got it, updated! ' . $this->confirmationSummary()];
+                $this->messages[] = ['role' => 'assistant', 'text' => $this->replyAfterEdit()];
                 $this->dispatch('message-added');
                 return;
             }
@@ -527,6 +570,15 @@ class Llm extends Component
             return;
         }
 
+        if ($this->awaitingSlot === 'duration' && $this->aiDateTo === '' && $this->applyDurationDays($userText)) {
+            $this->aiPrompt  = '';
+            $this->missCount = 0;
+            $this->messages[] = ['role' => 'assistant', 'text' => 'Got it! ' . $this->confirmationSummary()];
+            $this->awaitingSlot = 'confirmation';
+            $this->dispatch('message-added');
+            return;
+        }
+
         if ($this->isGreetingOnly($userText)) {
             $this->aiPrompt = '';
             $this->messages[] = ['role' => 'assistant', 'text' => self::GREETING_REPLY];
@@ -542,6 +594,17 @@ class Llm extends Component
         }
 
         $this->parseAiPrompt();
+
+        if ($this->pastDateNotice !== null) {
+            $notice = $this->pastDateNotice;
+            $this->pastDateNotice = null;
+            $this->awaitingSlot   = 'dates';
+            $this->missCount      = 0;
+            $this->aiPrompt       = '';
+            $this->messages[]     = ['role' => 'assistant', 'text' => $notice];
+            $this->dispatch('message-added');
+            return;
+        }
 
         if ($this->ambiguityNotice !== null) {
             $notice = $this->ambiguityNotice;
@@ -725,17 +788,12 @@ class Llm extends Component
                 $reply = "Got your budget of {$this->formattedBudget()}! " . $reply;
             }
 
-            // Worded dates are INTERPRETED rather than matched, so the traveler
-            // has to see what was settled on — a misread "Aug Three twenty twenty
-            // six" must be caught here, not discovered on the summary screen.
-            // Skipped when dates were the slot being asked for, because that path
-            // fills the last slot and lands on confirmationSummary(), which
-            // already lists them.
-            $datesJustCaptured = !$hadDatesBefore
-                && $this->aiDateFrom !== '' && $this->aiDateTo !== ''
-                && $previouslyAwaiting !== 'dates';
+            $datesJustCaptured = !$hadDatesBefore && $this->aiDateFrom !== '';
             if ($datesJustCaptured) {
-                $reply = "Got your dates — {$this->aiDateFrom} to {$this->aiDateTo}! " . $reply;
+                $when = $this->aiDateTo !== ''
+                    ? "{$this->aiDateFrom} to {$this->aiDateTo}"
+                    : $this->aiDateFrom;
+                $reply = "Got your dates: {$when}! " . $reply;
             }
 
             if ($isTangentQuestion) {
@@ -1085,7 +1143,7 @@ class Llm extends Component
             ($this->aiDateFrom && $this->aiDateTo) ? "{$this->aiDateFrom} to {$this->aiDateTo}" : 'unknown',
         );
 
-        $today = date('l, M j, Y');
+        $today = $this->travellerToday()->format('l, M j, Y');
 
         $prompt = <<<PROMPT
 You are a travel planning assistant extracting structured information from a traveler's message.
@@ -1181,26 +1239,18 @@ PROMPT;
             }
         }
 
-        // date_to is no longer required. A traveler who names one date ("going
-        // Aug Three") had the provider read it correctly and then had the answer
-        // discarded here, so nothing was filled and TARA re-asked the question it
-        // had just been given an answer to.
         if (($this->aiDateFrom === '' || $this->aiDateTo === '')
             && !empty($data['date_from'])) {
-            $tsFrom = strtotime($data['date_from'] . ' ' . date('Y'));
+            $tsFrom = strtotime($data['date_from'] . ' ' . $this->travellerToday()->year);
             $tsTo   = !empty($data['date_to']) ? strtotime($data['date_to']) : false;
 
-            // Same six-day trip parseDateRange()'s own single-date branch
-            // assumes, so both paths answer a lone start date identically.
-            $soloDate = $tsFrom && $tsTo === false;
-            if ($soloDate) {
-                $tsTo = $tsFrom + 5 * 86400;
-            }
-
-            if ($tsFrom && $tsTo && $tsFrom >= strtotime('today')) {
+            if ($tsFrom && ! $this->startsInThePast($tsFrom)) {
                 $this->aiDateFrom = $data['date_from'];
-                $this->aiDateTo   = $soloDate ? date('M j, Y', $tsTo) : $data['date_to'];
-                $this->aiDays     = (int) ceil(abs($tsTo - $tsFrom) / 86400) + 1;
+
+                if ($tsTo && $tsTo >= $tsFrom) {
+                    $this->aiDateTo = $data['date_to'];
+                    $this->aiDays   = (int) ceil(abs($tsTo - $tsFrom) / 86400) + 1;
+                }
             }
         }
 
@@ -1213,7 +1263,8 @@ PROMPT;
         if ($this->aiFrom === '') return 'origin';
         if ($this->aiTravelers === 0) return 'travelers';
         if ($this->aiBudgetMin === 0 && $this->aiBudgetMax === 0) return 'budget';
-        if ($this->aiDateFrom === '' || $this->aiDateTo === '') return 'dates';
+        if ($this->aiDateFrom === '') return 'dates';
+        if ($this->aiDateTo   === '') return 'duration';
         return '';
     }
 
@@ -1279,6 +1330,8 @@ PROMPT;
             (bool) preg_match('/\bbudget\b/i', $text) => 'budget',
             (bool) preg_match('/\btravelers?\b|\bpeople\b|\bpax\b/i', $text) => 'travelers',
 
+            (bool) preg_match('/\bdays?\b|\bnights?\b|\bduration\b|\bhow long\b/i', $text) => 'duration',
+
             (bool) preg_match('/\bdates?\b/i', $text) => 'dates',
             default => null,
         };
@@ -1331,14 +1384,6 @@ PROMPT;
 
         if ($slot === 'dates') {
             $range = $this->parseDateRange($value);
-            // parseDateRange() matches numeric days only, so a date spelled out
-            // ("Aug Three twenty twenty six") never resolves here — and this is
-            // the one date path with no AI behind it at all, so answering the
-            // dates question in words used to loop forever. Teaching the regex
-            // word-numbers would mean parsing worded YEARS too, which is
-            // genuinely ambiguous ("twenty twenty six" reads as 20/20/6), inside
-            // a ~130-line pattern chain that 200+ tests depend on. The providers
-            // already read these correctly, so ask them instead.
             $range ??= $this->dateRangeFromAi($value);
             if ($range === null) return false;
             $this->aiDateFrom = $range['from'];
@@ -1347,22 +1392,18 @@ PROMPT;
             return true;
         }
 
+        if ($slot === 'duration') {
+            return $this->applyDurationDays($value);
+        }
+
         return false;
     }
 
-    /**
-     * Travel dates read out of free text by an AI provider, in the same shape
-     * parseDateRange() returns — so callers can't tell which one answered.
-     *
-     * Only reached once parseDateRange() has already declined, which keeps every
-     * numeric and relative form it understands ("Aug 3 2026", "next week",
-     * "two weeks") on the instant, offline path.
-     */
     private function dateRangeFromAi(string $text): ?array
     {
         if (trim($text) === '') return null;
 
-        $today = date('l, M j, Y');
+        $today = $this->travellerToday()->format('l, M j, Y');
 
         $prompt = <<<PROMPT
         Today is {$today}.
@@ -1387,36 +1428,23 @@ PROMPT;
         if ($data === null || empty($data['date_from'])) return null;
 
         $tsFrom = strtotime((string) $data['date_from']);
-        if ($tsFrom === false || $tsFrom < strtotime('today')) return null;
+        if ($tsFrom === false) return null;
+        if ($this->refusePastStart($tsFrom)) return null;
 
         $tsTo = !empty($data['date_to']) ? strtotime((string) $data['date_to']) : false;
 
-        // A lone start date gets the same six-day trip parseDateRange()'s own
-        // single-date branch assumes, rather than being thrown away.
         if ($tsTo === false || $tsTo < $tsFrom) {
-            $tsTo = $tsFrom + 5 * 86400;
+            return $this->startOnly($tsFrom, '');
         }
 
         return [
             'from'      => date('M j', $tsFrom),
             'to'        => date('M j, Y', $tsTo),
             'days'      => (int) ceil(($tsTo - $tsFrom) / 86400) + 1,
-            // parseDateRange() hands back the text with the date removed; the
-            // whole answer was the date here, so there is nothing left over.
             'remainder' => '',
         ];
     }
 
-    /**
-     * Deliberately narrower than tryProviders(): the first two providers only,
-     * at a 12s timeout each.
-     *
-     * This runs on a path that used to be instant, and on Windows PHP counts
-     * network wait against max_execution_time — an unbounded walk of five
-     * providers is exactly how a slow day turns into an uncatchable fatal. Two
-     * attempts caps the worst case at roughly 24s. A provider that is simply out
-     * of quota answers in well under a second, so it costs nothing to pass.
-     */
     private function askDateReader(string $prompt): ?string
     {
         foreach (array_slice(self::PROVIDER_ORDER, 0, 2) as $class) {
@@ -1433,6 +1461,19 @@ PROMPT;
         }
 
         return null;
+    }
+
+    private function replyAfterEdit(): string
+    {
+        if ($this->aiDateFrom !== '' && $this->aiDateTo === '') {
+            $this->awaitingSlot    = 'duration';
+            $this->pendingEditSlot = '';
+            $this->missCount       = 0;
+
+            return "Got your dates: {$this->aiDateFrom}! " . $this->questionFor('duration', 0);
+        }
+
+        return 'Got it, updated! ' . $this->confirmationSummary();
     }
 
     private function tryDestinationAlternatives(string $text): bool
@@ -1541,6 +1582,7 @@ PROMPT;
                 'travelers'   => "Got it. How many people are traveling?",
                 'budget'      => "Got it. What's your budget for this trip?",
                 'dates'       => "Got it. When are you planning to travel? (e.g. \"August 3 to 10\")",
+                'duration'    => "Got it. How many days will you be traveling?",
                 default       => '',
             };
         }
@@ -1552,6 +1594,7 @@ PROMPT;
                 'travelers'   => "I didn’t catch the number of travelers. How many people are going? For example: “2” or “solo”.",
                 'budget'      => "I didn’t catch the budget amount. Roughly how much do you want to spend?",
                 'dates'       => "I still need your travel dates. When are you planning to travel?",
+                'duration'    => "I didn't catch the number of days. How many days will the trip be?",
                 default       => '',
             };
         }
@@ -1562,8 +1605,48 @@ PROMPT;
             'travelers'   => "Just a plain number works — for example: 2",
             'budget'      => "Just a plain number works — for example: 20000",
             'dates'       => "Just the dates works — for example: August 3 to 10, 2026",
+            'duration'    => "Just a plain number works — for example: 5",
             default       => '',
         };
+    }
+
+    private function parseDurationDays(string $text): ?int
+    {
+        $words = implode('|', array_keys(self::DURATION_WORD_NUMBERS));
+
+        if (preg_match('/\b(' . $words . '|\d{1,3})\s*-?\s*(days?|weeks?|nights?)\b/i', $text, $m)) {
+            $n    = is_numeric($m[1]) ? (int) $m[1] : (self::DURATION_WORD_NUMBERS[strtolower($m[1])] ?? 0);
+            $days = str_starts_with(strtolower($m[2]), 'week') ? $n * 7 : $n;
+
+            return ($days > 0 && $days <= 60) ? $days : null;
+        }
+
+        if (preg_match('/\b(\d{1,3})\b/', $text, $m)) {
+            $days = (int) $m[1];
+
+            return ($days > 0 && $days <= 60) ? $days : null;
+        }
+
+        if (preg_match('/\b(' . $words . ')\b/i', $text, $m)) {
+            $days = self::DURATION_WORD_NUMBERS[strtolower($m[1])] ?? 0;
+
+            return $days > 0 ? $days : null;
+        }
+
+        return null;
+    }
+
+    private function applyDurationDays(string $text): bool
+    {
+        $days    = $this->parseDurationDays($text);
+        $startTs = $this->startDateTimestamp();
+
+        if ($days === null || $startTs === null) return false;
+
+        $this->aiDateTo = date('M j, Y', $startTs + ($days - 1) * 86400);
+        $this->aiDays   = $days;
+
+        return true;
     }
 
     private function conversationSummary(): string
@@ -2183,23 +2266,18 @@ PROMPT;
 
         if (preg_match('/\b(next week|this weekend|next weekend|tomorrow|next month|today)\b/i', $text, $m)) {
             $phrase = strtolower($m[1]);
-            $today  = strtotime('today');
+            $today  = $this->travellerTodayTs();
 
-            [$startTs, $days] = match ($phrase) {
-                'next week'    => [strtotime('monday next week', $today), 7],
-                'this weekend' => [$this->comingSaturday($today), 2],
-                'next weekend' => [strtotime('+7 days', $this->comingSaturday($today)), 2],
-                'tomorrow'     => [strtotime('+1 day', $today), 6],
-                'today'        => [$today, 6],
-                'next month'   => [strtotime('first day of next month', $today), 6],
+            $startTs = match ($phrase) {
+                'next week'    => strtotime('monday next week', $today),
+                'this weekend' => $this->comingSaturday($today),
+                'next weekend' => strtotime('+7 days', $this->comingSaturday($today)),
+                'tomorrow'     => strtotime('+1 day', $today),
+                'today'        => $today,
+                'next month'   => strtotime('first day of next month', $today),
             };
 
-            return [
-                'from'      => date('M j', $startTs),
-                'to'        => date('M j, Y', $startTs + ($days - 1) * 86400),
-                'days'      => $days,
-                'remainder' => str_replace($m[0], '', $text),
-            ];
+            return $this->startOnly($startTs, str_replace($m[0], '', $text));
         }
 
         $monthMap = [
@@ -2220,6 +2298,10 @@ PROMPT;
             if (checkdate($mon1, $d1, $year) && checkdate($mon2, $d2, $year)) {
                 $ts1 = mktime(0,0,0,$mon1,$d1,$year);
                 $ts2 = mktime(0,0,0,$mon2,$d2,$year);
+                if ($ts2 < $ts1) {
+                    $ts2 = mktime(0,0,0,$mon2,$d2,$year + 1);
+                }
+                if ($this->refusePastStart($ts1)) return null;
                 return [
                     'from'      => date('M j', $ts1),
                     'to'        => date('M j, Y', $ts2),
@@ -2233,8 +2315,10 @@ PROMPT;
             $year = !empty($m[4]) ? (int)$m[4] : (int)date('Y');
             $d1   = (int)$m[2]; $d2 = (int)$m[3];
             if (checkdate($mon, $d1, $year) && checkdate($mon, $d2, $year)) {
+                $ts1 = mktime(0,0,0,$mon,$d1,$year);
+                if ($this->refusePastStart($ts1)) return null;
                 return [
-                    'from'      => date('M j', mktime(0,0,0,$mon,$d1,$year)),
+                    'from'      => date('M j', $ts1),
                     'to'        => date('M j, Y', mktime(0,0,0,$mon,$d2,$year)),
                     'days'      => abs($d2-$d1)+1,
                     'remainder' => str_replace($m[0], '', $text),
@@ -2247,12 +2331,8 @@ PROMPT;
             $day  = (int)$m[2];
             if (checkdate($mon, $day, $year)) {
                 $ts1 = mktime(0,0,0,$mon,$day,$year);
-                return [
-                    'from'      => date('M j', $ts1),
-                    'to'        => date('M j, Y', $ts1 + 5*86400),
-                    'days'      => 6,
-                    'remainder' => str_replace($m[0], '', $text),
-                ];
+                if ($this->refusePastStart($ts1)) return null;
+                return $this->startOnly($ts1, str_replace($m[0], '', $text));
             }
 
         } elseif (preg_match('/\b(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s*(?:to|[-–])\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})\b/', $text, $m)) {
@@ -2263,6 +2343,7 @@ PROMPT;
             if (checkdate($mo1, $da1, $y1) && checkdate($mo2, $da2, $y2)) {
                 $ts1 = mktime(0,0,0,$mo1,$da1,$y1);
                 $ts2 = mktime(0,0,0,$mo2,$da2,$y2);
+                if ($this->refusePastStart($ts1)) return null;
                 return [
                     'from'      => date('M j', $ts1),
                     'to'        => date('M j, Y', $ts2),
@@ -2276,31 +2357,16 @@ PROMPT;
             $mo  = (int)$m[1]; $da = (int)$m[2];
             if (checkdate($mo, $da, $y)) {
                 $ts1 = mktime(0,0,0,$mo,$da,$y);
-                return [
-                    'from'      => date('M j', $ts1),
-                    'to'        => date('M j, Y', $ts1 + 5*86400),
-                    'days'      => 6,
-                    'remainder' => str_replace($m[0], '', $text),
-                ];
+                if ($this->refusePastStart($ts1)) return null;
+                return $this->startOnly($ts1, str_replace($m[0], '', $text));
             }
 
         } elseif (preg_match('/\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|\d{1,2})\s*-?\s*(days?|weeks?)\b/i', $text, $m)) {
-            $wordNums = [
-                'a' => 1, 'an' => 1, 'one' => 1, 'two' => 2, 'three' => 3, 'four' => 4,
-                'five' => 5, 'six' => 6, 'seven' => 7, 'eight' => 8, 'nine' => 9, 'ten' => 10,
-                'eleven' => 11, 'twelve' => 12, 'thirteen' => 13, 'fourteen' => 14,
-            ];
-            $n    = is_numeric($m[1]) ? (int) $m[1] : ($wordNums[strtolower($m[1])] ?? 0);
+            $n    = is_numeric($m[1]) ? (int) $m[1] : (self::DURATION_WORD_NUMBERS[strtolower($m[1])] ?? 0);
             $days = str_starts_with(strtolower($m[2]), 'week') ? $n * 7 : $n;
 
             if ($days > 0 && $days <= 60) {
-                $anchorTs = strtotime('today');
-                if ($this->aiDateFrom !== '') {
-                    $existing = strtotime($this->aiDateFrom . ' ' . date('Y'));
-                    if ($existing !== false && $existing >= strtotime('today')) {
-                        $anchorTs = $existing;
-                    }
-                }
+                $anchorTs = $this->startDateTimestamp() ?? $this->travellerTodayTs();
 
                 return [
                     'from'      => date('M j', $anchorTs),

@@ -629,66 +629,92 @@ class LlmTest extends TestCase
         $component->assertSet('awaitingSlot', 'confirmation');
     }
 
+    /**
+     * A date safely ahead of today. Hardcoded calendar dates rot — several tests
+     * here broke the day real time passed the 2026 dates they were written with,
+     * and past dates are refused outright now.
+     */
+    private function futureTs(int $daysAhead = 40): int
+    {
+        return strtotime("+{$daysAhead} days");
+    }
+
     public function test_editing_dates_during_confirmation_updates_just_that_slot(): void
     {
-        $user = User::factory()->create();
+        $user  = User::factory()->create();
+        $start = $this->futureTs();
 
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiPrompt', 'please continue')->call('automateTrip');
 
-        $component->set('aiPrompt', 'change dates to September 15')->call('automateTrip');
+        $component->set('aiPrompt', 'change dates to ' . date('F j', $start))->call('automateTrip');
 
-        $component->assertSet('aiDateFrom', 'Sep 15');
-        $component->assertSet('aiDateTo', 'Sep 20, 2026');
-        $component->assertSet('awaitingSlot', 'confirmation');
-        $lastMessage = collect($component->get('messages'))->last()['text'];
-        $this->assertStringContainsString('Got it, updated!', $lastMessage);
+        // One date, so the end is cleared and the length is asked for rather than
+        // carried over from the trip that was already on file.
+        $component->assertSet('aiDateFrom', date('M j', $start));
+        $component->assertSet('aiDateTo', '');
+        $this->assertStringContainsString(
+            'How many days',
+            collect($component->get('messages'))->last()['text']
+        );
     }
 
     public function test_editing_dates_recognizes_the_sept_abbreviation(): void
     {
         $user = User::factory()->create();
 
+        // Pinned to September so the abbreviation is actually exercised; the year
+        // is whichever one still lies ahead.
+        $year  = (int) date('n') > 9 ? (int) date('Y') + 1 : (int) date('Y');
+        $start = strtotime("15 September {$year}");
+
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiPrompt', 'please continue')->call('automateTrip');
 
-        $component->set('aiPrompt', 'change dates to Sept 15')->call('automateTrip');
+        $component->set('aiPrompt', "change dates to Sept 15, {$year}")->call('automateTrip');
 
-        $component->assertSet('aiDateFrom', 'Sep 15');
-        $component->assertSet('aiDateTo', 'Sep 20, 2026');
+        $component->assertSet('aiDateFrom', date('M j', $start));
     }
 
     public function test_editing_dates_with_a_range_updates_in_one_shot(): void
     {
-        $user = User::factory()->create();
+        $user  = User::factory()->create();
+        $start = $this->futureTs();
+        $end   = $this->futureTs(45);
 
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiPrompt', 'please continue')->call('automateTrip');
 
-        $component->set('aiPrompt', 'change dates to August 20 to 25')->call('automateTrip');
+        $component->set('aiPrompt', 'change dates to ' . date('F j', $start) . ' to ' . date('F j', $end))
+            ->call('automateTrip');
 
-        $component->assertSet('aiDateFrom', 'Aug 20');
-        $component->assertSet('aiDateTo', 'Aug 25, 2026');
+        // Both ends given, so no duration question — straight back to the summary.
+        $component->assertSet('aiDateFrom', date('M j', $start));
+        $component->assertSet('aiDateTo', date('M j, Y', $end));
         $component->assertSet('pendingEditSlot', '');
-        $lastMessage = collect($component->get('messages'))->last()['text'];
-        $this->assertStringContainsString('Got it, updated!', $lastMessage);
+        $this->assertStringContainsString(
+            'Got it, updated!',
+            collect($component->get('messages'))->last()['text']
+        );
     }
 
     public function test_editing_dates_with_a_bare_range_and_no_dates_keyword_still_works(): void
     {
-        $user = User::factory()->create();
+        $user  = User::factory()->create();
+        $start = $this->futureTs();
+        $end   = $this->futureTs(45);
 
         $component = $this->withAllSlotsFilled(
             Livewire::actingAs($user)->test(Llm::class)
         )->set('aiPrompt', 'please continue')->call('automateTrip');
 
-        $component->set('aiPrompt', 'August 20 to 25')->call('automateTrip');
+        $component->set('aiPrompt', date('F j', $start) . ' to ' . date('F j', $end))->call('automateTrip');
 
-        $component->assertSet('aiDateFrom', 'Aug 20');
-        $component->assertSet('aiDateTo', 'Aug 25, 2026');
+        $component->assertSet('aiDateFrom', date('M j', $start));
+        $component->assertSet('aiDateTo', date('M j, Y', $end));
         $lastMessage = collect($component->get('messages'))->last()['text'];
         $this->assertStringContainsString('Got it, updated!', $lastMessage);
         $this->assertStringNotContainsString('No worries, take your time', $lastMessage);
@@ -2554,13 +2580,15 @@ class LlmTest extends TestCase
     {
         $user = User::factory()->create();
 
+        // Each phrase says WHEN, never how long. The trip length is asked for
+        // separately rather than assumed, so none of these fills an end date.
         $cases = [
-            'next week'    => [strtotime('monday next week', strtotime('today')), 7],
-            'tomorrow'     => [strtotime('+1 day', strtotime('today')), 6],
-            'next month'   => [strtotime('first day of next month', strtotime('today')), 6],
+            'next week'  => strtotime('monday next week', strtotime('today')),
+            'tomorrow'   => strtotime('+1 day', strtotime('today')),
+            'next month' => strtotime('first day of next month', strtotime('today')),
         ];
 
-        foreach ($cases as $phrase => [$expectedStart, $expectedDays]) {
+        foreach ($cases as $phrase => $expectedStart) {
             Http::fake(['*' => Http::response([], 500)]);
 
             $component = Livewire::actingAs($user)->test(Llm::class)
@@ -2574,7 +2602,13 @@ class LlmTest extends TestCase
                 ->call('automateTrip');
 
             $component->assertSet('aiDateFrom', date('M j', $expectedStart));
-            $component->assertSet('aiDays', $expectedDays);
+            $component->assertSet('aiDateTo', '');
+            $component->assertSet('awaitingSlot', 'duration');
+            $this->assertStringContainsString(
+                'How many days',
+                collect($component->get('messages'))->last()['text'],
+                "\"{$phrase}\" should ask for the trip length, not invent one."
+            );
         }
     }
 
@@ -2590,7 +2624,9 @@ class LlmTest extends TestCase
         $result = $method->invoke($llm, 'this weekend');
 
         $this->assertNotNull($result);
-        $this->assertSame(2, $result['days']);
+        // A weekend is a start date, not a two-day trip — the length is asked for.
+        $this->assertSame('', $result['to']);
+        $this->assertSame(0, $result['days']);
 
         $start = strtotime($result['from'] . ' ' . date('Y'));
         $this->assertGreaterThanOrEqual(strtotime('today'), $start,
@@ -2637,15 +2673,16 @@ class LlmTest extends TestCase
         $component->set('aiPrompt', 'change dates to Aug Three twenty twenty six')
             ->call('automateTrip');
 
+        // The provider read the words; the length is then asked for, not assumed.
         $component->assertSet('aiDateFrom', date('M j', $start));
-        $component->assertSet('aiDateTo', date('M j, Y', $start + 5 * 86400));
+        $component->assertSet('aiDateTo', '');
         $this->assertStringContainsString(
-            'Got it, updated!',
+            'How many days',
             collect($component->get('messages'))->last()['text']
         );
     }
 
-    public function test_date_range_from_ai_defaults_a_lone_start_date_to_six_days(): void
+    public function test_date_range_from_ai_leaves_a_lone_start_date_open(): void
     {
         auth()->login(User::factory()->create());
 
@@ -2656,8 +2693,8 @@ class LlmTest extends TestCase
 
         $this->assertNotNull($result);
         $this->assertSame(date('M j', $start), $result['from']);
-        $this->assertSame(date('M j, Y', $start + 5 * 86400), $result['to']);
-        $this->assertSame(6, $result['days'], 'A lone start date gets the same six-day trip the regex path assumes.');
+        $this->assertSame('', $result['to'], 'One date means the length is still unknown.');
+        $this->assertSame(0, $result['days']);
     }
 
     public function test_date_range_from_ai_keeps_an_explicit_end_date(): void
@@ -2746,9 +2783,11 @@ class LlmTest extends TestCase
             ->set('aiPrompt', 'Aug Three twenty twenty six')
             ->call('automateTrip');
 
+        // The provider read the words and the start landed; the length is the
+        // duration question's job, so no end date is invented here.
         $component->assertSet('aiDateFrom', date('M j', $start));
-        $component->assertSet('aiDateTo', date('M j, Y', $start + 5 * 86400));
-        $component->assertSet('aiDays', 6);
+        $component->assertSet('aiDateTo', '');
+        $component->assertSet('awaitingSlot', 'duration');
     }
 
     public function test_dates_captured_while_another_slot_is_missing_are_echoed_back(): void
@@ -2794,7 +2833,14 @@ class LlmTest extends TestCase
         // The whole point of trying parseDateRange() first: the common forms stay
         // instant and offline. If any of these start costing an API call, the
         // fallback has been wired in front of the regex instead of behind it.
-        foreach (['August 20 to 25', 'Aug 3 2026', 'next week', 'two weeks'] as $phrase) {
+        $phrases = [
+            date('F j', $this->futureTs()) . ' to ' . date('j', $this->futureTs(45)),
+            date('M j Y', $this->futureTs()),
+            'next week',
+            'two weeks',
+        ];
+
+        foreach ($phrases as $phrase) {
             Http::fake(['*' => Http::response([], 500)]);
 
             $component = $this->withAllSlotsFilled(
@@ -2803,13 +2849,176 @@ class LlmTest extends TestCase
                 ->set('aiPrompt', 'change dates to ' . $phrase)
                 ->call('automateTrip');
 
-            $this->assertStringContainsString(
-                'Got it, updated!',
-                collect($component->get('messages'))->last()['text'],
-                "\"{$phrase}\" should be handled by the regex, not a provider."
-            );
+            // Whether it lands on the summary or the duration question, what
+            // matters here is that no provider was consulted to read it.
+            $this->assertNotEmpty($component->get('aiDateFrom'),
+                "\"{$phrase}\" should have been read by the regex.");
             Http::assertNothingSent();
         }
+    }
+
+    public function test_a_single_date_asks_for_the_trip_length_instead_of_inventing_one(): void
+    {
+        $user  = User::factory()->create();
+        $start = $this->futureTs();
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $component = $this->datesQuestionPending($user)
+            ->set('aiPrompt', date('F j', $start))
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', date('M j', $start));
+        $component->assertSet('aiDateTo', '');
+        $component->assertSet('aiDays', 0);
+        $component->assertSet('awaitingSlot', 'duration');
+        $this->assertStringContainsString(
+            'How many days',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    public function test_answering_the_duration_completes_the_dates(): void
+    {
+        $user  = User::factory()->create();
+        $start = $this->futureTs();
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $component = $this->datesQuestionPending($user)
+            ->set('aiPrompt', date('F j', $start))
+            ->call('automateTrip');
+
+        $component->set('aiPrompt', '3')->call('automateTrip');
+
+        // Three days means the start plus two, not the start plus three.
+        $component->assertSet('aiDateTo', date('M j, Y', $start + 2 * 86400));
+        $component->assertSet('aiDays', 3);
+        $component->assertSet('awaitingSlot', 'confirmation');
+    }
+
+    public function test_the_duration_answer_accepts_words_and_units(): void
+    {
+        $user  = User::factory()->create();
+        $start = $this->futureTs();
+
+        foreach (['5 days' => 5, 'a week' => 7, 'two weeks' => 14] as $answer => $expectedDays) {
+            Http::fake(['*' => Http::response([], 500)]);
+
+            $component = $this->datesQuestionPending($user)
+                ->set('aiPrompt', date('F j', $start))
+                ->call('automateTrip');
+
+            $component->set('aiPrompt', $answer)->call('automateTrip');
+
+            $component->assertSet('aiDays', $expectedDays);
+            $component->assertSet('aiDateTo', date('M j, Y', $start + ($expectedDays - 1) * 86400));
+        }
+    }
+
+    public function test_a_past_date_is_refused_with_an_explanation(): void
+    {
+        $user = User::factory()->create();
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $component = $this->datesQuestionPending($user)
+            ->set('aiPrompt', date('F j', strtotime('-10 days')))
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', '');
+        $component->assertSet('awaitingSlot', 'dates');
+
+        // Saying why beats re-asking the same question, which reads as not having
+        // been heard.
+        $this->assertStringContainsString(
+            'already passed',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    public function test_yesterday_is_refused_even_though_it_is_only_one_day_past(): void
+    {
+        $user = User::factory()->create();
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $component = $this->datesQuestionPending($user)
+            ->set('aiPrompt', date('F j', strtotime('-1 day')))
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', '');
+        $this->assertStringContainsString(
+            'already passed',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    public function test_today_is_accepted_because_it_has_not_passed(): void
+    {
+        $user = User::factory()->create();
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        // The boundary case, and the one seen working in the app: a trip can start
+        // today. Easy to break by making the guard one day too strict.
+        $component = $this->datesQuestionPending($user)
+            ->set('aiPrompt', date('F j'))
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', date('M j'));
+        $component->assertSet('awaitingSlot', 'duration');
+    }
+
+    public function test_an_explicit_range_skips_the_duration_question(): void
+    {
+        $user  = User::factory()->create();
+        $start = $this->futureTs();
+        $end   = $this->futureTs(45);
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        $component = $this->datesQuestionPending($user)
+            ->set('aiPrompt', date('F j', $start) . ' to ' . date('F j', $end))
+            ->call('automateTrip');
+
+        // Both ends given, so asking the length would be asking something already
+        // answered.
+        $component->assertSet('aiDateFrom', date('M j', $start));
+        $component->assertSet('aiDateTo', date('M j, Y', $end));
+        $component->assertSet('awaitingSlot', 'confirmation');
+        $this->assertStringNotContainsString(
+            'How many days',
+            collect($component->get('messages'))->last()['text']
+        );
+    }
+
+    public function test_a_bogus_browser_timezone_falls_back_instead_of_throwing(): void
+    {
+        $user = User::factory()->create();
+
+        Http::fake(['*' => Http::response([], 500)]);
+
+        // browserTimezone is a public property, so the client can send anything.
+        // Carbon::today() throws on an unknown zone — it has to be whitelisted.
+        $component = $this->datesQuestionPending($user)
+            ->set('browserTimezone', 'Moon/Tranquility')
+            ->set('aiPrompt', date('F j', $this->futureTs()))
+            ->call('automateTrip');
+
+        $component->assertSet('aiDateFrom', date('M j', $this->futureTs()));
+    }
+
+    /** Every slot filled except the dates, with the dates question pending. */
+    private function datesQuestionPending(User $user): \Livewire\Features\SupportTesting\Testable
+    {
+        return Livewire::actingAs($user)->test(Llm::class)
+            ->set('aiFrom', 'Manila')
+            ->set('aiTo', 'Boracay')
+            ->set('aiTravelers', 2)
+            ->set('aiBudgetMin', 30000)
+            ->set('aiBudgetMax', 30000)
+            ->set('awaitingSlot', 'dates');
     }
 
     public function test_example_destination_stays_domestic_when_the_budget_cannot_reach_abroad(): void

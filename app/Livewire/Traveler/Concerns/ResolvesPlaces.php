@@ -3,22 +3,6 @@ namespace App\Livewire\Traveler\Concerns;
 
 use App\Support\PlaceCatalog;
 
-/**
- * Turning what a traveller typed into a place the app actually knows: catalogue
- * lookup first, then a fuzzy "did you mean", then an AI verifier as a last
- * resort — plus the questions asked about a place once resolved (its IATA code,
- * whether two places are the same, whether the trip leaves the country).
- *
- * Methods only. The state they read — aiFrom, aiTo, aiPlaceCache,
- * pendingPlaceSuggestion, placeVerificationFailed — stays declared on the
- * component, along with the PHILIPPINE_IATA_CODES, NON_ANSWER_FILLERS and
- * PROVIDER_ORDER constants. A trait is flattened into the using class, so
- * $this-> and self:: resolve exactly as before.
- *
- * matchKnownPlace() calls looksLikeGibberish() from ClassifiesText, and
- * askPlaceVerifier() calls decodeAiJson() on the component — both fine for the
- * same reason.
- */
 trait ResolvesPlaces
 {
     private function looksLikeAttempt(string $slot, string $userText): bool
@@ -30,6 +14,10 @@ trait ResolvesPlaces
             'budget'    => (bool) preg_match('/\d/', $userText),
             'dates'     => (bool) preg_match(
                 '/\d|january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec/i',
+                $userText
+            ),
+            'duration'  => (bool) preg_match(
+                '/\d|\bdays?\b|\bweeks?\b|\bnights?\b|\b(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen)\b/i',
                 $userText
             ),
             default => false,

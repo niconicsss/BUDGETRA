@@ -37,12 +37,6 @@ class GeminiService
 
     public function planTrip(string $userPrompt): ?array
     {
-        // Without an explicit "today" anchor, a relative duration ("1 week",
-        // "next month") has nothing to be relative TO — the model falls back
-        // to whatever date it associates with "now" from its own training
-        // data, which is routinely in the past relative to the server's
-        // actual today. extractWithAi() (in Llm.php) already does this for
-        // the same reason; this prompt just never had it.
         $today = date('l, M j, Y');
 
         $prompt = <<<PROMPT
@@ -164,7 +158,6 @@ PROMPT;
         int     $timeout = 18
     ): ?array {
         $days         = max(1, (int) round((strtotime($endDate) - strtotime($startDate)) / 86400) + 1);
-        // See GroqService::suggestAdditionalItinerary() for why this is capped.
         $days         = min($days, self::MAX_AI_ITINERARY_DAYS);
         $selected     = implode(', ', $alreadySelected) ?: 'none';
         $tags         = implode(', ', array_filter($interests, fn($i) => strlen($i) < 80)) ?: 'general travel';
@@ -174,8 +167,6 @@ PROMPT;
         $maxPerDay    = (int) round($maxBudg / max(1, $days));
         $extraRule      = $constraint ? "\n0. OVERRIDE CONSTRAINT: {$constraint}" : '';
         $departTimeLabel = $departTime ?: '05:00 PM';
-        // The traveler skipped picking a hotel — have the AI suggest one
-        // instead of leaving the whole trip with no lodging at all.
         $accommodationRule = $needsAccommodation
             ? "\n7. The traveler has NOT booked accommodation yet. Add ONE lodging suggestion as the FIRST activity on Day 1: a real, existing hotel or guesthouse in {$destination} that fits the budget, type \"accommodation\", time \"02:00 PM\", title the hotel's name, description mentioning room type and star rating, and cost equal to the TOTAL price for all {$days} night(s) of the stay (not a per-night rate). Do not add a separate accommodation entry on any other day."
             : '';

@@ -1,17 +1,6 @@
 <?php
 namespace App\Livewire\Traveler\Concerns;
 
-/**
- * Reading what a traveller's message IS — a greeting, a question, profanity,
- * gibberish, a correction, a request for suggestions — without deciding what
- * to do about it. The reply itself stays with the chat flow.
- *
- * Every method here is a pure function of its argument, which is why this was
- * a safe thing to lift out of Llm.php unchanged.
- *
- * One outward dependency: isNonAnswerFiller() reads self::NON_ANSWER_FILLERS,
- * which stays on the component because the slot-filling code uses it too.
- */
 trait ClassifiesText
 {
     private const GREETINGS = [

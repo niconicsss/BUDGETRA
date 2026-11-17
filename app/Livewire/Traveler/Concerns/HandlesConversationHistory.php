@@ -3,16 +3,6 @@ namespace App\Livewire\Traveler\Concerns;
 
 use App\Models\AiConversationHistory;
 
-/**
- * The past-conversations panel: listing, viewing and deleting saved chats.
- *
- * A trait rather than a service class because the view calls all seven actions
- * as wire:click handlers on the component itself, and Livewire resolves those
- * against the component instance.
- *
- * Archiving a finished conversation is NOT here — that writes through
- * AiConversationHistory::create() as part of the chat flow, and belongs with it.
- */
 trait HandlesConversationHistory
 {
     public bool $showHistory       = false;

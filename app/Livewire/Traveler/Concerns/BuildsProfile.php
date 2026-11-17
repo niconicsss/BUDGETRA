@@ -26,7 +26,6 @@ trait BuildsProfile
         if ($hasBudget) {
             $localCode = $profile->daily_budget_currency;
             $clauses[] = ($localCode !== null && $profile->daily_budget_local > 0)
-                // The code, never '₱', for a currency with no symbol on file.
                 ? (PlaceCatalog::CURRENCY_SYMBOLS[$localCode] ?? $localCode . ' ') . number_format($profile->daily_budget_local) . ' as your budget'
                 : '₱' . number_format($profile->daily_budget) . ' as your budget';
         }
@@ -37,7 +36,7 @@ trait BuildsProfile
 
         $this->messages[] = ['role' => 'assistant', 'text' =>
             "Would you like me to use your saved travel preferences for this trip? "
-            . "I see you've set " . $this->joinNaturally($clauses) . " — want me to use these details?"];
+            . "I see you've set " . $this->joinNaturally($clauses) . ". Want me to use these details?"];
 
         $this->pendingProfileOffer = true;
     }
@@ -244,10 +243,6 @@ trait BuildsProfile
         return match ($slot) {
             'home_city' => "What city are you traveling from?",
 
-            // The column is named daily_budget for historical reasons, but every
-            // reader treats it as the whole-trip figure — it becomes aiBudgetMax
-            // directly and is checked against MINIMUM_TOTAL_BUDGET. The question
-            // says so plainly rather than leaving the traveller to guess.
             'daily_budget' => "How much do you usually budget for a trip?",
 
             'travel_style' => "Do you usually travel solo, or with a group?",
