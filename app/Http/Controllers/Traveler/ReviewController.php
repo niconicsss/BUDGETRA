@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Traveler;
 
 use App\Http\Controllers\Controller;
 use App\Models\Attraction;
+use App\Models\Destination;
 use App\Models\DestinationCost;
 use App\Models\Review;
 use App\Models\ReviewHelpfulVote;
@@ -43,46 +44,65 @@ class ReviewController extends Controller
         return view('traveler.reviews.index', compact('reviews', 'destinations'));
     }
 
+    /**
+     * A review is its stars and its words. The trip type, group size and
+     * amount spent the reviews table also has columns for are no longer asked
+     * for or changed here, so editing a review leaves any earlier values be.
+     */
+    private function reviewRules(): array
+    {
+        return [
+            'rating' => 'required|integer|min:1|max:5',
+            'body'   => 'required|string|min:10|max:2000',
+        ];
+    }
+
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'destination'    => 'required|string|max:255',
-            'rating'         => 'required|integer|min:1|max:5',
-            'body'           => 'required|string|min:10|max:2000',
+        $request->validate($this->reviewRules() + [
+            // Reviews written from an attraction or destination page name the
+            // place by id; only the free-form reviews page types a name.
+            'destination'    => 'required_without_all:attraction_id,destination_id|nullable|string|max:255',
             'attraction_id'  => 'nullable|exists:attractions,id',
-            'trip_type'      => 'nullable|in:Solo,Couple,Family,Barkada',
-            'pax_count'      => 'nullable|integer|min:1|max:50',
-            'spent_amount'   => 'nullable|numeric|min:0|max:9999999',
+            'destination_id' => 'nullable|exists:destinations,id',
         ]);
 
-        auth()->user()->reviews()->create(array_merge($validated, ['status' => 'active']));
+        [$destinationName, $attractionId] = $this->place($request);
 
-        if ($request->filled('attraction_id')) {
-            return redirect()->route('attractions.show', $request->attraction_id)
-                             ->with('success', 'Review submitted!');
+        $data = [
+            'destination'   => $destinationName,
+            'attraction_id' => $attractionId,
+            'rating'        => (int) $request->rating,
+            'body'          => $request->body,
+            'status'        => 'active',
+        ];
+
+        // One review per traveler per place, on the attraction and destination
+        // pages: a second submit (another tab, a double-click) edits the first
+        // instead of stacking a duplicate under the same name.
+        $existing = $this->placeReviewOf($request, $destinationName, $attractionId);
+        if ($existing) {
+            $existing->update($data);
+            return $this->backToPlace($request, 'Review updated!');
         }
-        return redirect()->route('reviews.index')->with('success', 'Review submitted!');
+
+        auth()->user()->reviews()->create($data);
+
+        return $this->backToPlace($request, 'Review submitted!');
     }
 
     public function update(Request $request, Review $review)
     {
         abort_if($review->user_id !== auth()->id(), 403, "You can only edit your own review.");
 
-        $validated = $request->validate([
-            'rating'        => 'required|integer|min:1|max:5',
-            'body'          => 'required|string|min:10|max:2000',
-            'trip_type'     => 'nullable|in:Solo,Couple,Family,Barkada',
-            'pax_count'     => 'nullable|integer|min:1|max:50',
-            'spent_amount'  => 'nullable|numeric|min:0|max:9999999',
+        $request->validate($this->reviewRules());
+
+        $review->update([
+            'rating' => (int) $request->rating,
+            'body'   => $request->body,
         ]);
 
-        $review->update($validated);
-
-        if ($request->filled('attraction_id')) {
-            return redirect()->route('attractions.show', $request->attraction_id)
-                             ->with('success', 'Review updated!');
-        }
-        return redirect()->route('reviews.index')->with('success', 'Review updated!');
+        return $this->backToPlace($request, 'Review updated!');
     }
 
     public function destroy(Request $request, Review $review)
@@ -91,11 +111,61 @@ class ReviewController extends Controller
 
         $review->delete();
 
+        return $this->backToPlace($request, 'Review deleted.');
+    }
+
+    /**
+     * Which place a new review is about: [destination name, attraction id].
+     *
+     * Taken from the database record when the form names one by id, not from
+     * a hidden "destination" field the browser could have changed.
+     */
+    private function place(Request $request): array
+    {
         if ($request->filled('attraction_id')) {
-            return redirect()->route('attractions.show', $request->attraction_id)
-                             ->with('success', 'Review deleted.');
+            $attraction = Attraction::findOrFail($request->attraction_id);
+            return [$attraction->destination, $attraction->id];
         }
-        return redirect()->route('reviews.index')->with('success', 'Review deleted.');
+
+        if ($request->filled('destination_id')) {
+            return [Destination::findOrFail($request->destination_id)->name, null];
+        }
+
+        return [trim($request->destination), null];
+    }
+
+    private function placeReviewOf(Request $request, string $destinationName, ?int $attractionId): ?Review
+    {
+        if ($attractionId) {
+            return auth()->user()->reviews()->where('attraction_id', $attractionId)->first();
+        }
+
+        if ($request->filled('destination_id')) {
+            return auth()->user()->reviews()
+                ->whereNull('attraction_id')
+                ->whereRaw('LOWER(destination) = ?', [mb_strtolower($destinationName)])
+                ->first();
+        }
+
+        return null;
+    }
+
+    /**
+     * Back to the reviews on the page the review was written from, with the
+     * floating confirmation pill (<x-toast>). The free-form reviews page keeps
+     * its inline message.
+     */
+    private function backToPlace(Request $request, string $message)
+    {
+        if ($request->filled('attraction_id')) {
+            return redirect()->to(route('attractions.show', $request->attraction_id) . '#reviews')->with('toast', $message);
+        }
+
+        if ($request->filled('destination_id')) {
+            return redirect()->to(route('destinations.show', $request->destination_id) . '#reviews')->with('toast', $message);
+        }
+
+        return redirect()->route('reviews.index')->with('success', $message);
     }
 
     public function flag(Request $request, Review $review)
@@ -107,7 +177,9 @@ class ReviewController extends Controller
         ]);
 
         if ($review->flagged_by === auth()->id()) {
-            return back()->with('success', "You've already flagged this review — an admin will take a look.");
+            // The pill (<x-toast>), which every page shows; the review pages
+            // never rendered a 'success' message, so reporting looked dead.
+            return back()->with('toast', "You've already reported this review.");
         }
 
         $review->update([
@@ -116,7 +188,7 @@ class ReviewController extends Controller
             'flagged_by'  => auth()->id(),
         ]);
 
-        return back()->with('success', 'Thanks — this review has been flagged for admin review.');
+        return back()->with('toast', 'Thanks — an admin will take a look.');
     }
 
     // One vote per traveler per review — firstOrCreate on the unique

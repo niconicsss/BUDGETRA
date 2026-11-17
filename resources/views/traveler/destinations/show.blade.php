@@ -61,9 +61,18 @@
             </div>
             <div class="dst-attraction-body">
                 <div class="dst-attraction-name">{{ $attraction->name }}</div>
-                @if ($attraction->category)
-                <span class="dst-attraction-badge">{{ $attraction->category }}</span>
-                @endif
+                <div class="dst-attraction-meta">
+                    @if ($attraction->category)
+                    <span class="dst-attraction-badge">{{ $attraction->category }}</span>
+                    @endif
+                    {{-- What travelers thought of it, from its reviews. --}}
+                    @if ($rated = $attractionRatings[$attraction->id] ?? null)
+                    <span class="dst-attraction-rating" title="{{ $rated->review_count }} {{ Str::plural('review', $rated->review_count) }}">
+                        <i class="fa-solid fa-star"></i> {{ number_format((float) $rated->avg_rating, 1) }}
+                        <span>({{ $rated->review_count }})</span>
+                    </span>
+                    @endif
+                </div>
             </div>
         </a>
         @endforeach
@@ -71,8 +80,15 @@
     @endif
 </div>
 
-@endsection
+{{-- Travelers' reviews of the destination itself, and the form to share
+     yours. Reviews of an attraction stay on that attraction's page. --}}
+@include('traveler.partials.reviews', [
+    'placeName'   => $destination->name,
+    'placeFields' => ['destination_id' => $destination->id],
+])
 
+{{-- Inside the section: it used to follow @endsection, which printed it
+     before the layout's <html>. --}}
 <style>
     .dst-back {
         display: inline-flex; align-items: center; gap: 6px;
@@ -147,4 +163,11 @@
         display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 20px;
     }
     .dst-empty p { color: var(--muted); font-size: 13.5px; margin: 0; }
+
+    .dst-attraction-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .dst-attraction-rating { font-size: 12.5px; font-weight: 700; color: var(--dark); display: inline-flex; align-items: center; gap: 4px; }
+    .dst-attraction-rating i { color: #F5A623; font-size: 11px; }
+    .dst-attraction-rating span { font-weight: 500; color: var(--muted); }
 </style>
+
+@endsection

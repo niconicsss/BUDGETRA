@@ -959,6 +959,11 @@ class SerpApiService
         foreach (array_slice($results, 0, 8) as $r) {
             $url = $r['original'] ?? $r['thumbnail'] ?? null;
             if (!$url) continue;
+            // Social-media "lookaside" links answer with a web page, not the
+            // image — Gardens of Malasag and KCC Mall Grounds both got one
+            // as their top result. Take the next real image instead.
+            $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+            if (preg_match('/(^|\.)(fbsbx\.com|facebook\.com|instagram\.com|tiktok\.com)$/', $host)) continue;
             $area = (int) ($r['original_width'] ?? 0) * (int) ($r['original_height'] ?? 0);
             if ($area > $bestArea) {
                 $bestArea = $area;
