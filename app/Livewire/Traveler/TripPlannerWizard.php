@@ -741,8 +741,8 @@ class TripPlannerWizard extends Component
             'hanoi' => 'HAN', 'vietnam' => 'SGN',
             'da nang' => 'DAD',
             'yangon' => 'RGN', 'myanmar' => 'RGN',
-            'phnom penh' => 'PNH', 'cambodia' => 'PNH',
-            'siem reap' => 'REP',
+            'phnom penh' => 'KTI', 'cambodia' => 'KTI',
+            'siem reap' => 'SAI',
             'vientiane' => 'VTE', 'laos' => 'VTE',
             'colombo' => 'CMB', 'sri lanka' => 'CMB',
             'dhaka' => 'DAC', 'bangladesh' => 'DAC',
@@ -3094,6 +3094,10 @@ class TripPlannerWizard extends Component
             ]);
         }
 
+        // Floating lower-right pill (<x-toast> in the layout), on whichever
+        // page the save lands.
+        session()->flash('toast', 'Trip saved successfully!');
+
         if (session()->pull('ai_edit_return')) {
             $this->redirect(route('trips.plan.ai'));
             return;
@@ -3366,6 +3370,8 @@ class TripPlannerWizard extends Component
             'current_savings' => 0,
             'deadline'        => $this->startDate,
         ]);
+
+        session()->flash('toast', 'Trip saved successfully!');
 
         return $this->redirect(route('itinerary.index') . '?trip_id=' . $trip->id, navigate: true);
     }

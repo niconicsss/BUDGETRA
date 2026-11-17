@@ -26,7 +26,8 @@ trait BuildsProfile
         if ($hasBudget) {
             $localCode = $profile->daily_budget_currency;
             $clauses[] = ($localCode !== null && $profile->daily_budget_local > 0)
-                ? (PlaceCatalog::CURRENCY_SYMBOLS[$localCode] ?? '₱') . number_format($profile->daily_budget_local) . ' as your budget'
+                // The code, never '₱', for a currency with no symbol on file.
+                ? (PlaceCatalog::CURRENCY_SYMBOLS[$localCode] ?? $localCode . ' ') . number_format($profile->daily_budget_local) . ' as your budget'
                 : '₱' . number_format($profile->daily_budget) . ' as your budget';
         }
         if (!empty($profile->interests)) {

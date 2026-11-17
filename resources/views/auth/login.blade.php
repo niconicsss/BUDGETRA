@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sign In — Budgetra</title>
+    <title>Budgetra</title>
     <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -40,7 +40,15 @@
                  errors this form can raise — a bad sign-in and a suspended
                  account — are attached to 'email', so they print under that
                  field; the banner only said it a second time. --}}
-            <form method="POST" action="{{ route('login') }}">
+            {{-- auth-labels-inside: the field names are the placeholders. The
+                 <label>s stay for screen readers and are only hidden visually
+                 (style.css), so the error styling keeps its hooks.
+                 auth-submit-errors-only: no red until Sign In is pressed. Email
+                 is autofocused, so the "empty required field" hint in
+                 style.css would otherwise paint it red the moment the page
+                 opens. A refused submit still marks the empty fields
+                 (.is-invalid, from auth-form.js or the server). --}}
+            <form method="POST" action="{{ route('login') }}" class="auth-labels-inside auth-submit-errors-only">
                 @csrf
 
                 <div class="form-group">
@@ -50,7 +58,7 @@
                         <input id="email" type="email" name="email"
                                value="{{ old('email') }}"
                                class="form-control {{ $errors->has('email') ? 'is-invalid' : '' }}"
-                               placeholder="" required autofocus>
+                               placeholder="Email Address" required autofocus>
                     </div>
                     @error('email')<div class="error">{{ $message }}</div>@enderror
                 </div>
@@ -61,7 +69,7 @@
                         <span class="input-icon"><i class="fa-solid fa-lock"></i></span>
                         <input id="password" type="password" name="password"
                                class="form-control {{ $errors->has('password') ? 'is-invalid' : '' }}"
-                               placeholder="" required>
+                               placeholder="Password" required>
                         <span class="input-suffix" id="togglePwd" style="cursor:pointer;">
                             <i class="fa-regular fa-eye" id="eyeIcon"></i>
                         </span>
@@ -97,6 +105,15 @@ document.getElementById('togglePwd').addEventListener('click', function () {
         pwd.type = 'password';
         icon.className = 'fa-regular fa-eye';
     }
+});
+
+// The eye only shows while there is something in the box (style.css hides it
+// on :placeholder-shown). Emptying the box also puts it back to hidden, so
+// whatever is typed next starts masked even if it was revealed before.
+document.getElementById('password').addEventListener('input', function () {
+    if (this.value !== '') return;
+    this.type = 'password';
+    document.getElementById('eyeIcon').className = 'fa-regular fa-eye';
 });
 </script>
 

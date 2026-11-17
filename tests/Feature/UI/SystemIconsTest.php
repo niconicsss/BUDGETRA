@@ -113,8 +113,8 @@ class SystemIconsTest extends TestCase
         // now also strips .app-icon and empties the button outright.
         //
         // Matched case-sensitively so the admin sidebar's own
-        // adminSidebarToggleIcon, which is still a Font Awesome glyph, does
-        // not trip this.
+        // adminSidebarToggleIcon does not trip this; AdminSidebarIconsTest
+        // covers that one.
         foreach ([
             resource_path('views/components/sidebar.blade.php'),
             resource_path('views/layouts/app.blade.php'),

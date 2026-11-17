@@ -81,8 +81,8 @@ final class PlaceCatalog
         'hanoi' => 'HAN', 'vietnam' => 'SGN',
         'da nang' => 'DAD',
         'yangon' => 'RGN', 'myanmar' => 'RGN',
-        'phnom penh' => 'PNH', 'cambodia' => 'PNH',
-        'siem reap' => 'REP',
+        'phnom penh' => 'KTI', 'cambodia' => 'KTI',
+        'siem reap' => 'SAI',
         'vientiane' => 'VTE', 'laos' => 'VTE',
         'colombo' => 'CMB', 'sri lanka' => 'CMB',
         'dhaka' => 'DAC', 'bangladesh' => 'DAC',
@@ -120,7 +120,7 @@ final class PlaceCatalog
         'muscat' => 'MCT', 'oman' => 'MCT',
         'amman' => 'AMM', 'jordan' => 'AMM',
         'tel aviv' => 'TLV', 'israel' => 'TLV',
-        'istanbul' => 'IST', 'turkey' => 'IST',
+        'istanbul' => 'IST', 'turkey' => 'IST', 'türkiye' => 'IST',
 
         'london' => 'LHR',
         'paris' => 'CDG',
@@ -134,7 +134,7 @@ final class PlaceCatalog
         'brussels' => 'BRU', 'belgium' => 'BRU',
         'lisbon' => 'LIS', 'portugal' => 'LIS',
         'athens' => 'ATH', 'greece' => 'ATH',
-        'prague' => 'PRG', 'czech republic' => 'PRG',
+        'prague' => 'PRG', 'czech republic' => 'PRG', 'czechia' => 'PRG',
         'budapest' => 'BUD', 'hungary' => 'BUD',
         'warsaw' => 'WAW', 'poland' => 'WAW',
         'stockholm' => 'ARN', 'sweden' => 'ARN',
@@ -217,7 +217,7 @@ final class PlaceCatalog
         'muscat' => 'OMR', 'oman' => 'OMR',
         'amman' => 'JOD', 'jordan' => 'JOD',
         'tel aviv' => 'ILS', 'israel' => 'ILS',
-        'istanbul' => 'TRY', 'turkey' => 'TRY',
+        'istanbul' => 'TRY', 'turkey' => 'TRY', 'türkiye' => 'TRY',
 
         'london' => 'GBP',
         'paris' => 'EUR', 'amsterdam' => 'EUR', 'frankfurt' => 'EUR', 'germany' => 'EUR',
@@ -226,7 +226,7 @@ final class PlaceCatalog
         'brussels' => 'EUR', 'belgium' => 'EUR', 'lisbon' => 'EUR', 'portugal' => 'EUR',
         'athens' => 'EUR', 'greece' => 'EUR', 'helsinki' => 'EUR', 'finland' => 'EUR',
         'zurich' => 'CHF', 'switzerland' => 'CHF',
-        'prague' => 'CZK', 'czech republic' => 'CZK',
+        'prague' => 'CZK', 'czech republic' => 'CZK', 'czechia' => 'CZK',
         'budapest' => 'HUF', 'hungary' => 'HUF',
         'warsaw' => 'PLN', 'poland' => 'PLN',
         'stockholm' => 'SEK', 'sweden' => 'SEK',
@@ -348,13 +348,13 @@ final class PlaceCatalog
         'athens' => 'Greece', 'greece' => 'Greece',
         'helsinki' => 'Finland', 'finland' => 'Finland',
         'zurich' => 'Switzerland', 'switzerland' => 'Switzerland',
-        'prague' => 'Czech Republic', 'czech republic' => 'Czech Republic',
+        'prague' => 'Czechia', 'czech republic' => 'Czechia', 'czechia' => 'Czechia',
         'copenhagen' => 'Denmark', 'denmark' => 'Denmark',
         'oslo' => 'Norway', 'norway' => 'Norway',
         'stockholm' => 'Sweden', 'sweden' => 'Sweden',
         'warsaw' => 'Poland', 'poland' => 'Poland',
         'budapest' => 'Hungary', 'hungary' => 'Hungary',
-        'istanbul' => 'Turkey', 'turkey' => 'Turkey',
+        'istanbul' => 'Türkiye', 'turkey' => 'Türkiye', 'türkiye' => 'Türkiye',
         'moscow' => 'Russia', 'russia' => 'Russia',
 
         // Middle East
@@ -458,10 +458,17 @@ final class PlaceCatalog
         // cities for behaves the same way: fall back to the app's home market.
         $home = ($country !== null && isset($countryCities[$country])) ? $country : 'Philippines';
 
-        $toEntry = static function (string $name, string $group): array {
+        // IATA_CODES is the curated lookup (it knows Boracay flies from MPH,
+        // say), but it only covers the places this app grew up around. The
+        // home country's own list carries a code for every one of its cities,
+        // so it fills in the rest — otherwise most of the world's home cities
+        // would be offered with no airport to search flights from.
+        $homeCodes = array_flip($countryCities[$home] ?? []);
+
+        $toEntry = static function (string $name, string $group) use ($homeCodes): array {
             return [
                 'name'  => $name,
-                'code'  => self::IATA_CODES[strtolower($name)] ?? '',
+                'code'  => self::IATA_CODES[strtolower($name)] ?? $homeCodes[$name] ?? '',
                 'group' => $group,
             ];
         };
@@ -540,6 +547,14 @@ final class PlaceCatalog
 
     // Country name (matching config/country_cities.php's keys, and the
     // registration form's Country dropdown) => 3-letter ISO currency code.
+    //
+    // Every country and territory on that dropdown. A country missing here
+    // would fall back to PHP in home_currency(), which is the "every currency
+    // is pesos" bug all over again. Current as of 2026: Bulgaria and Croatia
+    // are on the euro, Curaçao and Sint Maarten on the Caribbean guilder
+    // (XCG), Sierra Leone on the new leone (SLE). Places that use another
+    // country's money list that money (USD in Ecuador, AUD in Kiribati…);
+    // Zimbabwe lists USD, the currency most prices there are quoted in.
     public const COUNTRY_CURRENCIES = [
         'Philippines' => 'PHP', 'Indonesia' => 'IDR', 'Thailand' => 'THB', 'Vietnam' => 'VND',
         'Malaysia' => 'MYR', 'Singapore' => 'SGD', 'Japan' => 'JPY', 'South Korea' => 'KRW',
@@ -549,6 +564,76 @@ final class PlaceCatalog
         'Netherlands' => 'EUR', 'Brazil' => 'BRL', 'Mexico' => 'MXN', 'Argentina' => 'ARS',
         'Saudi Arabia' => 'SAR', 'United Arab Emirates' => 'AED', 'Egypt' => 'EGP',
         'Nigeria' => 'NGN', 'South Africa' => 'ZAR', 'Kenya' => 'KES',
+
+        // Asia and the Middle East
+        'Afghanistan' => 'AFN', 'Bahrain' => 'BHD', 'Bangladesh' => 'BDT', 'Bhutan' => 'BTN',
+        'Brunei' => 'BND', 'Cambodia' => 'KHR', 'Hong Kong' => 'HKD', 'Iran' => 'IRR',
+        'Iraq' => 'IQD', 'Israel' => 'ILS', 'Jordan' => 'JOD', 'Kazakhstan' => 'KZT',
+        'Kuwait' => 'KWD', 'Kyrgyzstan' => 'KGS', 'Laos' => 'LAK', 'Lebanon' => 'LBP',
+        'Macau' => 'MOP', 'Maldives' => 'MVR', 'Mongolia' => 'MNT', 'Myanmar' => 'MMK',
+        'Nepal' => 'NPR', 'North Korea' => 'KPW', 'Oman' => 'OMR', 'Pakistan' => 'PKR',
+        'Palestine' => 'ILS', 'Qatar' => 'QAR', 'Sri Lanka' => 'LKR', 'Syria' => 'SYP',
+        'Taiwan' => 'TWD', 'Tajikistan' => 'TJS', 'Timor-Leste' => 'USD', 'Türkiye' => 'TRY',
+        'Turkmenistan' => 'TMT', 'Uzbekistan' => 'UZS', 'Yemen' => 'YER',
+
+        // Europe
+        'Åland Islands' => 'EUR', 'Albania' => 'ALL', 'Andorra' => 'EUR', 'Armenia' => 'AMD',
+        'Austria' => 'EUR', 'Azerbaijan' => 'AZN', 'Belarus' => 'BYN', 'Belgium' => 'EUR',
+        'Bosnia and Herzegovina' => 'BAM', 'Bulgaria' => 'EUR', 'Croatia' => 'EUR',
+        'Cyprus' => 'EUR', 'Czechia' => 'CZK', 'Denmark' => 'DKK', 'Estonia' => 'EUR',
+        'Faroe Islands' => 'DKK', 'Finland' => 'EUR', 'Georgia' => 'GEL', 'Gibraltar' => 'GIP',
+        'Greece' => 'EUR', 'Guernsey' => 'GBP', 'Hungary' => 'HUF', 'Iceland' => 'ISK',
+        'Ireland' => 'EUR', 'Isle of Man' => 'GBP', 'Jersey' => 'GBP', 'Kosovo' => 'EUR',
+        'Latvia' => 'EUR', 'Liechtenstein' => 'CHF', 'Lithuania' => 'EUR', 'Luxembourg' => 'EUR',
+        'Malta' => 'EUR', 'Moldova' => 'MDL', 'Monaco' => 'EUR', 'Montenegro' => 'EUR',
+        'North Macedonia' => 'MKD', 'Norway' => 'NOK', 'Poland' => 'PLN', 'Portugal' => 'EUR',
+        'Romania' => 'RON', 'Russia' => 'RUB', 'San Marino' => 'EUR', 'Serbia' => 'RSD',
+        'Slovakia' => 'EUR', 'Slovenia' => 'EUR', 'Svalbard and Jan Mayen' => 'NOK',
+        'Sweden' => 'SEK', 'Switzerland' => 'CHF', 'Ukraine' => 'UAH', 'Vatican City' => 'EUR',
+
+        // The Americas and the Caribbean
+        'Anguilla' => 'XCD', 'Antigua and Barbuda' => 'XCD', 'Aruba' => 'AWG', 'Bahamas' => 'BSD',
+        'Barbados' => 'BBD', 'Belize' => 'BZD', 'Bermuda' => 'BMD', 'Bolivia' => 'BOB',
+        'Bonaire, Sint Eustatius and Saba' => 'USD', 'British Virgin Islands' => 'USD',
+        'Cayman Islands' => 'KYD', 'Chile' => 'CLP', 'Colombia' => 'COP', 'Costa Rica' => 'CRC',
+        'Cuba' => 'CUP', 'Curaçao' => 'XCG', 'Dominica' => 'XCD', 'Dominican Republic' => 'DOP',
+        'Ecuador' => 'USD', 'El Salvador' => 'USD', 'Falkland Islands' => 'FKP',
+        'French Guiana' => 'EUR', 'Greenland' => 'DKK', 'Grenada' => 'XCD', 'Guadeloupe' => 'EUR',
+        'Guatemala' => 'GTQ', 'Guyana' => 'GYD', 'Haiti' => 'HTG', 'Honduras' => 'HNL',
+        'Jamaica' => 'JMD', 'Martinique' => 'EUR', 'Montserrat' => 'XCD', 'Nicaragua' => 'NIO',
+        'Panama' => 'USD', 'Paraguay' => 'PYG', 'Peru' => 'PEN', 'Puerto Rico' => 'USD',
+        'Saint Barthélemy' => 'EUR', 'Saint Kitts and Nevis' => 'XCD', 'Saint Lucia' => 'XCD',
+        'Saint Martin' => 'EUR', 'Saint Pierre and Miquelon' => 'EUR',
+        'Saint Vincent and the Grenadines' => 'XCD', 'Sint Maarten' => 'XCG', 'Suriname' => 'SRD',
+        'Trinidad and Tobago' => 'TTD', 'Turks and Caicos Islands' => 'USD',
+        'U.S. Virgin Islands' => 'USD', 'Uruguay' => 'UYU', 'Venezuela' => 'VES',
+
+        // Africa
+        'Algeria' => 'DZD', 'Angola' => 'AOA', 'Benin' => 'XOF', 'Botswana' => 'BWP',
+        'Burkina Faso' => 'XOF', 'Burundi' => 'BIF', 'Cabo Verde' => 'CVE', 'Cameroon' => 'XAF',
+        'Central African Republic' => 'XAF', 'Chad' => 'XAF', 'Comoros' => 'KMF',
+        "Côte d'Ivoire" => 'XOF', 'Democratic Republic of the Congo' => 'CDF', 'Djibouti' => 'DJF',
+        'Equatorial Guinea' => 'XAF', 'Eritrea' => 'ERN', 'Eswatini' => 'SZL', 'Ethiopia' => 'ETB',
+        'Gabon' => 'XAF', 'Gambia' => 'GMD', 'Ghana' => 'GHS', 'Guinea' => 'GNF',
+        'Guinea-Bissau' => 'XOF', 'Lesotho' => 'LSL', 'Liberia' => 'LRD', 'Libya' => 'LYD',
+        'Madagascar' => 'MGA', 'Malawi' => 'MWK', 'Mali' => 'XOF', 'Mauritania' => 'MRU',
+        'Mauritius' => 'MUR', 'Mayotte' => 'EUR', 'Morocco' => 'MAD', 'Mozambique' => 'MZN',
+        'Namibia' => 'NAD', 'Niger' => 'XOF', 'Republic of the Congo' => 'XAF', 'Réunion' => 'EUR',
+        'Rwanda' => 'RWF', 'Saint Helena, Ascension and Tristan da Cunha' => 'SHP',
+        'São Tomé and Príncipe' => 'STN', 'Senegal' => 'XOF', 'Seychelles' => 'SCR',
+        'Sierra Leone' => 'SLE', 'Somalia' => 'SOS', 'South Sudan' => 'SSP', 'Sudan' => 'SDG',
+        'Tanzania' => 'TZS', 'Togo' => 'XOF', 'Tunisia' => 'TND', 'Uganda' => 'UGX',
+        'Western Sahara' => 'MAD', 'Zambia' => 'ZMW', 'Zimbabwe' => 'USD',
+
+        // Oceania
+        'American Samoa' => 'USD', 'Christmas Island' => 'AUD', 'Cocos (Keeling) Islands' => 'AUD',
+        'Cook Islands' => 'NZD', 'Fiji' => 'FJD', 'French Polynesia' => 'XPF', 'Guam' => 'USD',
+        'Kiribati' => 'AUD', 'Marshall Islands' => 'USD', 'Micronesia' => 'USD', 'Nauru' => 'AUD',
+        'New Caledonia' => 'XPF', 'Niue' => 'NZD', 'Norfolk Island' => 'AUD',
+        'Northern Mariana Islands' => 'USD', 'Palau' => 'USD', 'Papua New Guinea' => 'PGK',
+        'Pitcairn Islands' => 'NZD', 'Samoa' => 'WST', 'Solomon Islands' => 'SBD',
+        'Tokelau' => 'NZD', 'Tonga' => 'TOP', 'Tuvalu' => 'AUD', 'Vanuatu' => 'VUV',
+        'Wallis and Futuna' => 'XPF',
     ];
 
     // 3-letter ISO currency code => display symbol, covering every code in

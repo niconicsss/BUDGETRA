@@ -34,12 +34,15 @@
         }
     }, true);
 
-    // Typing clears it, on `input` rather than `change` so the highlight goes
-    // the moment the field stops being empty instead of waiting for a blur.
+    // Touching a field at all clears its red and its message, valid yet or
+    // not: a half-typed email, or a box typed in and emptied again, is not an
+    // error until the submit button is pressed — the `invalid` handler above
+    // puts it back then. On `input` rather than `change`, so it goes with the
+    // first keystroke instead of waiting for a blur.
     form.addEventListener('input', function (e) {
-        if (e.target.checkValidity && e.target.checkValidity()) {
-            e.target.classList.remove('is-invalid');
-        }
+        e.target.classList.remove('is-invalid');
+        var group = e.target.closest('.form-group');
+        if (group) group.querySelectorAll('.error').forEach(function (el) { el.remove(); });
     });
 
     /* ── Submitting ──────────────────────────────────────────────────────

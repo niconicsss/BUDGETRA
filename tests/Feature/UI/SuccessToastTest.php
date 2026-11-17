@@ -77,6 +77,42 @@ class SuccessToastTest extends TestCase
             ->assertSessionMissing('toast');
     }
 
+    public function test_confirming_a_trip_in_the_planner_flashes_the_pill(): void
+    {
+        $me = $this->traveler();
+
+        Livewire::actingAs($me)
+            ->test(TripPlannerWizard::class)
+            ->set('manualFrom', 'Manila')
+            ->set('manualTo', 'Cebu')
+            ->set('startDate', '2027-02-01')
+            ->set('endDate', '2027-02-08')
+            ->set('manualBudgetMin', '20000')
+            ->set('manualBudgetMax', '30000')
+            ->call('saveItinerary')
+            ->assertRedirect(route('saved-trips'));
+
+        $this->assertNotNull(Trip::where('user_id', $me->id)->first());
+        $this->assertSame('Trip saved successfully!', session('toast'));
+    }
+
+    public function test_a_refused_save_does_not_flash_the_pill(): void
+    {
+        // A budget too large for the column: saveItinerary refuses before
+        // creating anything, so there is nothing to call saved.
+        $me = $this->traveler();
+
+        Livewire::actingAs($me)
+            ->test(TripPlannerWizard::class)
+            ->set('manualBudgetMax', '999999999999')
+            ->call('saveItinerary')
+            ->assertSet('emergencyError', 'That budget is larger than Budgetra can record. Please enter a smaller amount.')
+            ->assertNoRedirect();
+
+        $this->assertNull(Trip::where('user_id', $me->id)->first());
+        $this->assertNull(session('toast'));
+    }
+
     public function test_the_layout_plays_a_flashed_pill(): void
     {
         $html = $this->actingAs($this->traveler())

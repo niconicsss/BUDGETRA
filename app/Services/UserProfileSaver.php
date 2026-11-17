@@ -49,8 +49,12 @@ class UserProfileSaver
      */
     public static function budgetSymbolForHomeCity(string $homeCity): string
     {
-        $code = self::currencyForHomeCity($homeCity);
-        return PlaceCatalog::CURRENCY_SYMBOLS[$code ?? 'PHP'] ?? '₱';
+        $code = self::currencyForHomeCity($homeCity) ?? 'PHP';
+
+        // Every country can be picked at registration now, and most of their
+        // currencies have no symbol on file: label those with the code ("PEN "),
+        // never with '₱'.
+        return PlaceCatalog::CURRENCY_SYMBOLS[$code] ?? $code . ' ';
     }
 
     /**

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Account — Budgetra</title>
+    <title>Budgetra</title>
     <link rel="icon" type="image/png" href="{{ asset('systemicons/budgetraicon.png') }}?v={{ filemtime(public_path('systemicons/budgetraicon.png')) }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -40,7 +40,12 @@
             {{-- No summary banner here: every validated field prints its own
                  message underneath itself, so this only ever repeated the
                  first of them a few hundred pixels higher up. --}}
-            <form id="registerForm" method="POST" action="{{ route('register') }}">
+            {{-- Same two classes as Sign In. auth-labels-inside: the field
+                 names are the placeholders; the <label>s stay for screen
+                 readers, hidden visually. auth-submit-errors-only: no red until
+                 Create Account is pressed with something missing (cherry red
+                 then), and typing in a field clears it. See style.css. --}}
+            <form id="registerForm" method="POST" action="{{ route('register') }}" class="auth-labels-inside auth-submit-errors-only">
                 @csrf
 
                 {{-- First Name --}}
@@ -51,7 +56,7 @@
                         <input id="first_name" type="text" name="first_name"
                                value="{{ old('first_name') }}"
                                class="form-control {{ $errors->has('first_name') ? 'is-invalid' : '' }}"
-                               placeholder="" required autofocus>
+                               placeholder="First Name" required autofocus>
                     </div>
                     @error('first_name')<div class="error">{{ $message }}</div>@enderror
                 </div>
@@ -64,7 +69,7 @@
                         <input id="last_name" type="text" name="last_name"
                                value="{{ old('last_name') }}"
                                class="form-control {{ $errors->has('last_name') ? 'is-invalid' : '' }}"
-                               placeholder="" required>
+                               placeholder="Last Name" required>
                     </div>
                     @error('last_name')<div class="error">{{ $message }}</div>@enderror
                 </div>
@@ -77,7 +82,7 @@
                         <input id="email" type="email" name="email"
                                value="{{ old('email') }}"
                                class="form-control {{ $errors->has('email') ? 'is-invalid' : '' }}"
-                               placeholder="" required>
+                               placeholder="Email Address" required>
                     </div>
                     @error('email')<div class="error">{{ $message }}</div>@enderror
                 </div>
@@ -89,7 +94,7 @@
                         <span class="input-icon"><i class="fa-solid fa-lock"></i></span>
                         <input id="password" type="password" name="password"
                                class="form-control {{ $errors->has('password') ? 'is-invalid' : '' }}"
-                               placeholder="" required>
+                               placeholder="Password" required>
                         <span class="input-suffix" id="togglePwd1" style="cursor:pointer;">
                             <i class="fa-regular fa-eye" id="eyeIcon1"></i>
                         </span>
@@ -103,7 +108,7 @@
                     <div class="input-wrapper">
                         <span class="input-icon"><i class="fa-solid fa-lock-open"></i></span>
                         <input id="password_confirmation" type="password" name="password_confirmation"
-                               class="form-control" placeholder="" required>
+                               class="form-control" placeholder="Confirm Password" required>
                         <span class="input-suffix" id="togglePwd2" style="cursor:pointer;">
                             <i class="fa-regular fa-eye" id="eyeIcon2"></i>
                         </span>
@@ -112,39 +117,41 @@
 
                 @php
                     // The same list the Profile Builder draws its home-city
-                    // options from — this used to be a second copy of those 29
-                    // names, so a country could drift into one and not the
-                    // other and a traveler would end up with a home country
-                    // that has no cities behind it.
+                    // options from — every country and territory, each with at
+                    // least one city — so a traveler can never pick a home
+                    // country that has no cities behind it.
                     // Sorted here rather than by hand: the config is grouped by
                     // region, and a country added to it should find its own
                     // place in this list instead of landing at the bottom.
+                    // An English collator, not sort(): byte order would put
+                    // "Åland Islands" after Zimbabwe.
                     $countries = array_keys(config('country_cities'));
-                    sort($countries);
+                    (new \Collator('en'))->sort($countries);
                 @endphp
 
-                {{-- Country --}}
+                {{-- Country: a search box over the list, not a native <select>.
+                     243 entries is too many to scroll, so typing filters them
+                     as you go (country-combobox.js). The box itself has no
+                     name; only a country actually picked from the list reaches
+                     the hidden "country" field, so half-typed text is never
+                     submitted. Optional, like before — not required. --}}
                 <div class="form-group">
-                    <label class="form-label" for="country">
-                        <i class="fa-solid fa-globe" style="color:var(--primary);margin-right:4px;"></i>
-                        Country
-                    </label>
-                    <div style="position:relative;">
-                        <i class="fa-solid fa-earth-asia" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;pointer-events:none;z-index:1;"></i>
-                        <i class="fa-solid fa-chevron-down" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:11px;pointer-events:none;z-index:1;"></i>
-                        <select name="country" id="country"
-                                style="width:100%;padding:11px 34px 11px 36px;font-size:14px;font-family:inherit;
-                                       border:1.5px solid var(--border);border-radius:var(--radius-sm);
-                                       background:var(--bg-white);color:var(--text);outline:none;
-                                       cursor:pointer;-webkit-appearance:none;appearance:none;
-                                       transition:border-color 0.2s;"
-                                onfocus="this.style.borderColor='var(--primary)';this.style.boxShadow='0 0 0 3px rgba(139,58,16,0.12)'"
-                                onblur="this.style.borderColor='var(--border)';this.style.boxShadow='none'">
-                            <option value="" disabled selected>Select your country</option>
+                    <label class="form-label" for="country">Country</label>
+                    <div class="input-wrapper country-combo" id="countryCombo">
+                        <span class="input-icon"><i class="fa-solid fa-earth-asia"></i></span>
+                        <input id="country" type="text" class="form-control {{ $errors->has('country') ? 'is-invalid' : '' }}"
+                               value="{{ old('country') }}" placeholder="Select your country"
+                               autocomplete="off" spellcheck="false"
+                               role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="countryList">
+                        <i class="fa-solid fa-chevron-down country-combo-chevron" aria-hidden="true"></i>
+                        <input type="hidden" name="country" id="countryValue" value="{{ old('country') }}">
+                        <ul class="country-combo-list" id="countryList" role="listbox" aria-label="Countries" hidden>
                             @foreach($countries as $name)
-                                <option value="{{ $name }}" {{ old('country') === $name ? 'selected' : '' }}>{{ $name }}</option>
+                            <li class="country-combo-option" role="option" id="countryOption{{ $loop->index }}"
+                                data-value="{{ $name }}" aria-selected="{{ old('country') === $name ? 'true' : 'false' }}">{{ $name }}</li>
                             @endforeach
-                        </select>
+                            <li class="country-combo-empty" aria-live="polite" hidden>No country matches that.</li>
+                        </ul>
                     </div>
                     {{-- The only validated field that had no message of its own.
                          It can only fail on an over-long value, but with the
@@ -152,20 +159,13 @@
                     @error('country')<div class="error">{{ $message }}</div>@enderror
                 </div>
 
-                {{-- Terms --}}
-                <label class="auth-terms-check">
-                    <input type="checkbox" id="agreeTerms">
-                    <span>
-                        By creating an account, I agree to the
-                        <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>.
-                    </span>
-                </label>
-
                 {{-- While the request is in flight auth-form.js shows a bare
                      spinner here; data-busy-label is not drawn, it becomes the
                      button's accessible name for as long as that lasts. --}}
-                <button type="submit" id="createAccountBtn" class="btn btn-primary btn-block"
-                        style="margin-bottom:16px;" data-busy-label="Creating account…" disabled>
+                {{-- Always clickable, like Sign In: there is no terms checkbox to
+                     unlock it any more. Missing fields are caught on click. --}}
+                <button type="submit" id="createAccountBtn" class="btn btn-primary btn-lg btn-block"
+                        data-busy-label="Creating account…">
                     Create Account
                 </button>
             </form>
@@ -182,6 +182,7 @@
 </div>
 
 <script src="{{ asset('js/auth-form.js') }}?v={{ filemtime(public_path('js/auth-form.js')) }}"></script>
+<script src="{{ asset('js/country-combobox.js') }}?v={{ filemtime(public_path('js/country-combobox.js')) }}"></script>
 <script>
 function togglePassword(inputId, iconId) {
     var pwd  = document.getElementById(inputId);
@@ -200,8 +201,15 @@ document.getElementById('togglePwd1').addEventListener('click', function () {
 document.getElementById('togglePwd2').addEventListener('click', function () {
     togglePassword('password_confirmation', 'eyeIcon2');
 });
-document.getElementById('agreeTerms').addEventListener('change', function () {
-    document.getElementById('createAccountBtn').disabled = !this.checked;
+// Each eye only shows while its box has something in it (style.css hides it
+// on :placeholder-shown). Emptying a box also puts it back to hidden, so
+// whatever is typed next starts masked even if it was revealed before.
+[['password', 'eyeIcon1'], ['password_confirmation', 'eyeIcon2']].forEach(function (pair) {
+    document.getElementById(pair[0]).addEventListener('input', function () {
+        if (this.value !== '') return;
+        this.type = 'password';
+        document.getElementById(pair[1]).className = 'fa-regular fa-eye';
+    });
 });
 
 </script>

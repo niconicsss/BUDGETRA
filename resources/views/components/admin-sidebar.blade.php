@@ -10,7 +10,10 @@
 
     <div class="admin-sidebar-header">
         <button class="admin-sidebar-toggle-btn" id="adminSidebarToggle" title="Toggle sidebar">
-            <i class="fa-solid fa-angle-left" id="adminSidebarToggleIcon" style="color: white;"></i>
+            {{-- Same SVG chevrons as the traveler sidebar. Both ride on the
+                 element; style.css picks one off .admin-sidebar-collapsed. --}}
+            <i class="app-icon" id="adminSidebarToggleIcon"
+               style="{{ system_icon('left-chevron', 'chevron-left', true) }};{{ system_icon('right-chevron', 'chevron-right', true) }}"></i>
         </button>
     </div>
 
@@ -26,19 +29,19 @@
     <nav class="admin-sidebar-nav">
         @php
         $primaryLinks = [
-            ['href' => route('admin.dashboard'),          'icon_file' => 'dashboard.png',      'label' => 'Dashboard',      'key' => 'dashboard'],
-            ['href' => route('admin.users.index'),        'icon_file' => 'user-accounts.png',  'label' => 'User Accounts',  'key' => 'users'],
-            ['href' => route('admin.destinations.index'), 'icon_file' => 'destinations.png',   'label' => 'Destinations',   'key' => 'destinations'],
-            ['href' => route('admin.attractions.index'),  'icon_file' => 'attractions.png',    'label' => 'Attractions',    'key' => 'attractions'],
-            ['href' => route('admin.travel-costs.index'), 'icon_file' => 'travel-costs.png',   'label' => 'Travel Costs',   'key' => 'travel-costs'],
-            ['href' => route('admin.reviews.index'),      'icon_file' => 'user-reviews.png',   'label' => 'User Reviews',   'key' => 'reviews'],
+            ['href' => route('admin.dashboard'),          'icon' => 'dashboard',          'label' => 'Dashboard',      'key' => 'dashboard'],
+            ['href' => route('admin.users.index'),        'icon' => 'user-accounts',      'label' => 'User Accounts',  'key' => 'users'],
+            ['href' => route('admin.destinations.index'), 'icon' => 'destinations',       'label' => 'Destinations',   'key' => 'destinations'],
+            ['href' => route('admin.attractions.index'),  'icon' => 'attractions',        'label' => 'Attractions',    'key' => 'attractions'],
+            ['href' => route('admin.travel-costs.index'), 'icon' => 'travel-costs',       'label' => 'Travel Costs',   'key' => 'travel-costs'],
+            ['href' => route('admin.reviews.index'),      'icon' => 'user-reviews',       'label' => 'User Reviews',   'key' => 'reviews'],
         ];
         @endphp
         
         <div class="admin-sidebar-primary">
             @foreach ($primaryLinks as $link)
             <a href="{{ $link['href'] }}" class="admin-sidebar-link {{ $active === $link['key'] ? 'active' : '' }}" title="{{ $link['label'] }}">
-                <img src="{{ asset('systemicons/' . $link['icon_file']) }}" alt="{{ $link['label'] }} Icon" class="admin-sidebar-icon">
+                <x-nav-icon :icon="$link['icon']" :svg="true" />
                 <span class="admin-sidebar-label">{{ $link['label'] }}</span>
             </a>
             @endforeach
@@ -59,14 +62,14 @@
             </a>
             
             <a href="{{ route('admin.settings.index') }}" class="admin-sidebar-link {{ $active === 'settings' ? 'active' : '' }}" title="Settings">
-                <img src="{{ asset('systemicons/settings.png') }}" alt="Settings Icon" class="admin-sidebar-icon">
+                <x-nav-icon icon="settings" :svg="true" />
                 <span class="admin-sidebar-label">Settings</span>
             </a>
             
             <form method="POST" action="{{ route('logout') }}">
                 @csrf
                 <button type="submit" class="admin-sidebar-link admin-sidebar-logout" style="background:none; border:none; width:100%; text-align:left; cursor:pointer;" title="Logout">
-                    <img src="{{ asset('systemicons/logout.png') }}" alt="Logout Icon" class="admin-sidebar-icon">
+                    <x-nav-icon icon="logout" :svg="true" />
                     <span class="admin-sidebar-label">Logout</span>
                 </button>
             </form>
@@ -75,23 +78,15 @@
 </aside>
 
 <style>
-/* Turns black PNGs into white icons */
-.admin-sidebar-icon, 
+/* Turns the black logo PNG white. The nav icons no longer need this: they
+   are SVG masks filled with currentColor (.app-icon), like the traveler
+   sidebar, so they follow the link's colour — dim at rest, white on hover
+   and when active, red on Logout. */
 .admin-sidebar-logo-img {
     filter: brightness(0) invert(1);
 }
 
-.admin-sidebar-icon {
-    width: 20px;
-    height: 20px;
-    object-fit: contain;
-}
-
-.admin-sidebar-logo-img {
-    width: 30px; /* Adjust based on your logo's ideal size */
-    height: 30px;
-    object-fit: contain;
-}
+/* Size comes from .admin-sidebar-logo in style.css: 38px, as on the traveler sidebar. */
 
 /* For the slim sidebar effect */
 .admin-sidebar-collapsed .admin-sidebar-label,
@@ -104,10 +99,10 @@
 (function () {
     function applyState(collapsed) {
         var shell = document.getElementById('adminShell');
-        var icon  = document.getElementById('adminSidebarToggleIcon');
         if (!shell) return;
         shell.classList.toggle('admin-sidebar-collapsed', collapsed);
-        if (icon) icon.className = collapsed ? 'fa-solid fa-angle-right' : 'fa-solid fa-angle-left';
+        // No className swap: the chevron follows .admin-sidebar-collapsed in
+        // style.css, and reassigning className would drop .app-icon.
     }
 
     applyState(localStorage.getItem('adminSidebarCollapsed') === '1');

@@ -34,34 +34,22 @@ class AuthValidationHighlightTest extends TestCase
         }
     }
 
-    public function test_the_hint_is_the_border_and_nothing_else(): void
+    public function test_there_is_no_hint_before_a_submit(): void
     {
-        $css = $this->css();
-
-        // Clicking into an empty required field is not an error yet, so the
-        // label stays as it was — and nothing is drawn inside the box or
-        // around it.
-        $this->assertMatchesRegularExpression(
-            '/\.auth-wrapper \.form-control:required:focus:invalid \{\s*border-color: var\(--danger\);\s*box-shadow: none;\s*\}/',
-            $css
-        );
-        $this->assertDoesNotMatchRegularExpression(
-            '/:has\(\.form-control:required:focus:invalid\) \.form-label/',
-            $css
-        );
-        // The gutter icon lives inside the field, so it is left alone too.
-        $this->assertStringNotContainsString(
-            ':has(.form-control:required:focus:invalid) .input-icon',
-            $css
-        );
+        // There used to be a lighter weight: a red border on a focused,
+        // still-empty required field. Both auth pages autofocus a field, so it
+        // was red before anyone typed; it is gone, and red now waits for a
+        // refused submit.
+        $this->assertStringNotContainsString(':required:focus:invalid', $this->css());
     }
 
     public function test_neither_weight_lets_the_default_focus_ring_through(): void
     {
         // This is why box-shadow:none is written out rather than simply
         // omitted. .form-control:focus puts a 3px brown ring on every focused
-        // field in the app; both auth states out-specify it, so dropping the
-        // declaration would leave a red border wearing a brown halo.
+        // field in the app; the error state out-specifies it, so dropping the
+        // declaration would leave a red border wearing a brown halo. (There
+        // were two such states until the focus hint was removed.)
         $css = $this->css();
 
         $this->assertStringContainsString(
@@ -69,10 +57,10 @@ class AuthValidationHighlightTest extends TestCase
             $css,
             'the default focus ring this guards against has moved'
         );
-        $this->assertSame(
-            2,
-            preg_match_all('/\s{2}box-shadow: none;/', $css),
-            'both auth error states must cancel the default focus ring'
+        $this->assertMatchesRegularExpression(
+            '/^\.form-control\.is-invalid,\s*\.form-control\.is-invalid:focus \{[^}]*\s{2}box-shadow: none;/m',
+            $css,
+            'the error state must cancel the default focus ring'
         );
     }
 
@@ -101,24 +89,19 @@ class AuthValidationHighlightTest extends TestCase
         );
     }
 
-    public function test_the_two_weights_are_still_distinguishable(): void
+    public function test_only_a_refused_submit_draws_red(): void
     {
         $css = $this->css();
 
-        // Both draw the same red border now, so neither shadow depth nor a
-        // tint separates them. What does: the hint needs focus and goes no
-        // further than the border; the error holds with or without focus and
-        // takes the label with it.
+        // One weight now: the error, which holds with or without focus and
+        // takes the label with it. No red ring survives either.
         $this->assertSame(
             0,
             preg_match_all('/box-shadow: 0 0 0 3px rgba\(220, 38, 38, [\d.]+\)/', $css),
             'no red ring should survive on the auth forms'
         );
         $this->assertStringContainsString(':has(.form-control.is-invalid) .form-label', $css);
-        $this->assertDoesNotMatchRegularExpression(
-            '/:has\(\.form-control:required:focus:invalid\) \.form-label/',
-            $css
-        );
+        $this->assertStringNotContainsString(':required:focus:invalid', $css);
     }
 
     public function test_nothing_is_tinted_so_nothing_can_drift_from_the_token(): void

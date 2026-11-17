@@ -100,22 +100,12 @@ class AuthInvalidFieldTest extends TestCase
         );
     }
 
-    public function test_the_typing_hint_is_border_only_too(): void
+    public function test_there_is_no_typing_hint_any_more(): void
     {
-        // A separate, lighter state: you clicked into a required field that is
-        // still empty. Nothing has been refused yet, so the label stays as it
-        // was — but the field itself is marked the same way, a red border and
-        // nothing else.
-        $css = $this->css();
-
-        $this->assertMatchesRegularExpression(
-            '/\.auth-wrapper \.form-control:required:focus:invalid \{\s*border-color: var\(--danger\);\s*box-shadow: none;\s*\}/s',
-            $css
-        );
-        $this->assertStringNotContainsString(
-            ':has(.form-control:required:focus:invalid) .input-icon',
-            $css
-        );
+        // The lighter "you are in an empty required field" state is gone: both
+        // auth pages autofocus a field, so it was red before anyone typed.
+        // Red now means a submit was refused, and nothing else.
+        $this->assertStringNotContainsString(':required:focus:invalid', $this->css());
     }
 
     public function test_both_pages_still_mark_their_fields(): void

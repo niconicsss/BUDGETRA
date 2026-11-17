@@ -4,13 +4,14 @@ namespace Tests\Feature\UI;
 use Tests\TestCase;
 
 /**
- * A required field that is still empty says so while you're in it.
+ * Required fields are marked `required`, and are red only once a submit is
+ * refused.
  *
- * Clicking any field on Register gave the same brand-coloured focus ring
- * whether or not it still needed filling in, so nothing marked a field as
- * required until the server rejected the submit. :invalid carries it: a
- * required field matches while empty and stops matching once there is
- * something valid in it, so the ring returns to normal as you type.
+ * There used to be a "hint": a red border on any focused, still-empty
+ * required field. Both auth pages autofocus their first field, so it painted
+ * a page nobody had touched yet, and both have dropped it. `required` still
+ * matters — it is what makes the browser refuse the submit and fire the
+ * `invalid` events that auth-form.js turns into the red.
  */
 class AuthRequiredFieldTest extends TestCase
 {
@@ -19,19 +20,18 @@ class AuthRequiredFieldTest extends TestCase
         return file_get_contents(public_path('css/style.css'));
     }
 
-    public function test_an_empty_required_field_turns_red_while_focused(): void
+    public function test_an_empty_field_is_not_red_just_for_being_focused(): void
     {
-        $css = $this->css();
+        $this->assertStringNotContainsString(':required:focus:invalid', $this->css());
 
-        $this->assertStringContainsString(
-            '.auth-wrapper .form-control:required:focus:invalid {',
-            $css
-        );
-        // The same red as the error text under the field, not a second one.
-        $this->assertMatchesRegularExpression(
-            '/\.auth-wrapper \.form-control:required:focus:invalid \{\s*border-color: var\(--danger\);/',
-            $css
-        );
+        // Both forms carry the class that documents it.
+        foreach (['/login', '/register'] as $url) {
+            $this->assertMatchesRegularExpression(
+                '/<form [^>]*class="[^"]*\bauth-submit-errors-only\b/',
+                $this->get($url)->getContent(),
+                $url
+            );
+        }
     }
 
     public function test_it_does_not_reach_the_rest_of_the_app(): void
@@ -65,14 +65,21 @@ class AuthRequiredFieldTest extends TestCase
         // border on it would be telling the traveler something untrue.
         $html = $this->get('/register')->getContent();
 
-        preg_match('/<select name="country".*?>/s', $html, $m);
-        $this->assertNotEmpty($m, 'country select not found');
-        $this->assertStringNotContainsString('required', $m[0]);
+        // A search box now (no name; it only fills the hidden field), and
+        // neither of them is required.
+        preg_match('/<input id="country"[^>]*>/s', $html, $box);
+        preg_match('/<input type="hidden" name="country"[^>]*>/s', $html, $field);
+        $this->assertNotEmpty($box, 'country search box not found');
+        $this->assertNotEmpty($field, 'country field not found');
+        $this->assertStringNotContainsString('required', $box[0] . $field[0]);
     }
 
-    public function test_login_gets_it_too(): void
+    public function test_the_login_fields_are_marked_required_too(): void
     {
-        // Same wrapper, same two required fields.
-        $this->get('/login')->assertStatus(200)->assertSee('auth-wrapper', false);
+        $html = $this->get('/login')->assertStatus(200)->getContent();
+
+        foreach (['email', 'password'] as $field) {
+            $this->assertMatchesRegularExpression('/name="' . $field . '"[^>]*required/s', $html, $field);
+        }
     }
 }
