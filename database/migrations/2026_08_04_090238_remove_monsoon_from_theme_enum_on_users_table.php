@@ -13,10 +13,7 @@ return new class extends Migration
     public function up(): void
     {
         DB::statement("UPDATE users SET theme = 'daylight' WHERE theme = 'monsoon'");
-        Schema::table('users', function (Blueprint $table) {
-            $table->enum('theme', ['daylight', 'nightflight', 'terracotta', 'retro-wanderlust', 'sakura-bloom', 'auto'])
-                ->default('daylight')->change();
-        });
+        $this->setThemeValues(['daylight', 'nightflight', 'terracotta', 'retro-wanderlust', 'sakura-bloom', 'auto']);
     }
 
     /**
@@ -24,9 +21,21 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->enum('theme', ['daylight', 'nightflight', 'terracotta', 'monsoon', 'retro-wanderlust', 'sakura-bloom', 'auto'])
-                ->default('daylight')->change();
+        $this->setThemeValues(['daylight', 'nightflight', 'terracotta', 'monsoon', 'retro-wanderlust', 'sakura-bloom', 'auto']);
+    }
+
+    private function setThemeValues(array $values): void
+    {
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            $list = implode(', ', array_map(fn ($value) => "'{$value}'::character varying", $values));
+            DB::statement('ALTER TABLE users DROP CONSTRAINT IF EXISTS users_theme_check');
+            DB::statement("ALTER TABLE users ALTER COLUMN theme SET DEFAULT 'daylight'");
+            DB::statement("ALTER TABLE users ADD CONSTRAINT users_theme_check CHECK (theme::text = ANY (ARRAY[{$list}]::text[]))");
+            return;
+        }
+
+        Schema::table('users', function (Blueprint $table) use ($values) {
+            $table->enum('theme', $values)->default('daylight')->change();
         });
     }
 };

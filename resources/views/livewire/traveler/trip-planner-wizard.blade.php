@@ -2372,7 +2372,7 @@ window.sortAttractions = function(dir) {
 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:calc(100vh - 160px);padding:20px 24px 40px;text-align:center;">
 
     <h1 style="font-size:38px;font-weight:800;color:var(--dark);margin:0 0 14px;">Emergency Fund</h1>
-    <p style="font-size:16px;color:var(--muted);margin:0 0 40px;max-width:560px;line-height:1.6;">Set aside a safety net for unexpected expenses during your journey.</p>
+    <p style="font-size:16px;color:var(--muted);margin:0 0 40px;max-width:560px;line-height:1.6;">Set aside extra money just in case you need it.</p>
 
     <div x-data="{
             display: '',
