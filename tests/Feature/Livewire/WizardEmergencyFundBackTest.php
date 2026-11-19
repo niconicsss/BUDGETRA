@@ -83,7 +83,9 @@ class WizardEmergencyFundBackTest extends TestCase
 
         // Its own row above the centred block, not inside it: a button inside
         // a justify-content:center column rides down the page with the card.
-        $this->assertStringContainsString('<div style="padding:20px 24px 0;">', $html);
+        // No top or side padding, so it lines up with "Back to Flights" on the
+        // earlier steps; the 20px sits below it instead.
+        $this->assertStringContainsString('<div style="padding:0 0 20px;">', $html);
 
         $back    = strpos($html, 'backFromEdit(5)');
         $centred = strpos($html, 'justify-content:center;min-height:calc(100vh - 160px)');

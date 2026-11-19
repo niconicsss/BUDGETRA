@@ -10,7 +10,9 @@
         <div class="card-body">
             <h3>Download Backup</h3>
             <p>Creates an on-demand SQL dump of the entire database and downloads it as a <code>.sql</code> file.</p>
-            <form method="POST" action="{{ route('admin.backup.download') }}">
+            {{-- data-no-busy: the response is a file, so the page never
+                 changes and a dimmed button would stay dimmed. --}}
+            <form method="POST" action="{{ route('admin.backup.download') }}" data-no-busy>
                 @csrf
                 <button class="btn btn-primary">Download Backup (.sql)</button>
             </form>

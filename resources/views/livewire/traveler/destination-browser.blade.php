@@ -119,7 +119,9 @@
         .dst-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 
         .dst-row-media { position: relative; overflow: hidden; background: var(--bg); min-height: 104px; }
-        .dst-row-media img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s ease; }
+        /* Out of flow, like -noimg: in flow, a portrait photo's own height
+           (Vaadhoo's is ~2x taller than wide) stretched its row past the rest. */
+        .dst-row-media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .35s ease; }
         .dst-row:hover .dst-row-media img { transform: scale(1.06); }
 
         .dst-row-noimg {

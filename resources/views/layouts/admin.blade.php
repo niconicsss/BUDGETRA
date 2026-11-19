@@ -61,5 +61,6 @@
         })();
     </script>
     @livewireScripts
+    <script src="{{ asset('js/press-feedback.js') }}?v={{ filemtime(public_path('js/press-feedback.js')) }}" data-navigate-once></script>
 </body>
 </html>

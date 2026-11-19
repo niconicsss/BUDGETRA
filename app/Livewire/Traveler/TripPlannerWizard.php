@@ -113,6 +113,12 @@ class TripPlannerWizard extends Component
     public string $manualTo        = '';
     public string $manualBudgetMin = '';
     public string $manualBudgetMax = '';
+
+    // The smallest trip budget the planner accepts, in pesos. The traveller
+    // types their budget in their own currency, so the floor they see is this
+    // amount converted to that currency (see minimumBudget()).
+    public const MIN_TRIP_BUDGET_PESOS = 10000;
+
     public string $travelWith      = ''; // 'solo' | 'group'
 
 
@@ -863,13 +869,25 @@ class TripPlannerWizard extends Component
         // Parse single budget field: "30,000 - 50,000" or "30000" or "30,000 to 50,000"
         $raw = $this->manualBudgetMin;
         if (preg_match('/(\d[\d,]*)\s*(?:[-–to]+)\s*(\d[\d,]*)/i', $raw, $m)) {
-            $this->manualBudgetMin = preg_replace('/[^\d]/', '', $m[1]);
-            $this->manualBudgetMax = preg_replace('/[^\d]/', '', $m[2]);
+            $budgetLo = preg_replace('/[^\d]/', '', $m[1]);
+            $budgetHi = preg_replace('/[^\d]/', '', $m[2]);
         } else {
-            $single = preg_replace('/[^\d]/', '', $raw);
-            $this->manualBudgetMin = $single;
-            $this->manualBudgetMax = $single;
+            $budgetLo = $budgetHi = preg_replace('/[^\d]/', '', $raw);
         }
+
+        // Every amount typed has to reach the minimum, the bottom of a range
+        // included. Checked before the field is rewritten, so a refused range
+        // is still there to fix. The page checks the same thing first; this
+        // is the backstop.
+        $floor = $this->minimumBudget();
+        if ($floor !== null && min((int) $budgetLo, (int) $budgetHi) < $floor) {
+            $this->dispatch('trip-details-missing', fields: ['budget']);
+            $this->dispatch('budget-too-low');
+            return;
+        }
+
+        $this->manualBudgetMin = $budgetLo;
+        $this->manualBudgetMax = $budgetHi;
 
         // The manual-typing path autosaves as the traveler fills in Trip
         // Details (see the Alpine $watch in the blade). The two deep-link
@@ -1824,6 +1842,31 @@ class TripPlannerWizard extends Component
     }
 
     /**
+     * The smallest budget accepted on Trip Details, in the currency the budget
+     * is typed in: ₱10,000 as is for pesos, otherwise ₱10,000 at the live
+     * rate, rounded up to a clean figure (about ¥26,000, or $180). Null when
+     * no rate is available, so the field is never blocked on a guess.
+     */
+    public function minimumBudget(): ?int
+    {
+        $code = $this->budgetCurrency();
+        if ($code === 'PHP') return self::MIN_TRIP_BUDGET_PESOS;
+
+        $rate = (new CurrencyConverterService())->rateToPhp($code);
+        if (!$rate || $rate <= 0) return null;
+
+        $local = self::MIN_TRIP_BUDGET_PESOS / $rate;
+        $step  = match (true) {
+            $local < 100    => 1,
+            $local < 1000   => 10,
+            $local < 10000  => 100,
+            default         => 1000,
+        };
+
+        return (int) (ceil($local / $step) * $step);
+    }
+
+    /**
      * The currency every amount in the wizard is shown in.
      *
      * While planning that is the traveller's OWN currency — a Canadian prices
@@ -2145,8 +2188,11 @@ class TripPlannerWizard extends Component
             $remaining = $deadline - microtime(true);
             if ($remaining < 5) break;
 
+            $service = new $serviceClass();
             try {
-                $result = (new $serviceClass())->suggestAdditionalItinerary(...$args, needsAccommodation: $needsAccommodation, timeout: (int) min(25, floor($remaining)));
+                // Up to 40s rather than 25s: Groq now sits out its own
+                // per-minute limit inside this budget (see GroqService::generate).
+                $result = $service->suggestAdditionalItinerary(...$args, needsAccommodation: $needsAccommodation, timeout: (int) min(40, floor($remaining)));
             } catch (\Throwable) {
                 $result = null;
             }
@@ -2154,7 +2200,13 @@ class TripPlannerWizard extends Component
                 return $this->applyDepartureCost($result);
             }
 
-            $this->refusedThisRequest[$serviceClass] = true;
+            // A per-minute limit refills before the next option is asked for,
+            // so it is not a refusal to remember for the rest of the batch.
+            // Striking Groq off after one is what left step 8 with a single
+            // option while the other providers were down.
+            if (!($service->lastFailureWasTemporary ?? false)) {
+                $this->refusedThisRequest[$serviceClass] = true;
+            }
         }
         return null;
     }
@@ -2338,7 +2390,37 @@ class TripPlannerWizard extends Component
         // (connection resets/timeouts on Groq/Mistral) more room to recover
         // via suggestItinerary()'s per-provider timeout before giving up.
         $overallDeadline = microtime(true) + 100;
+
+        // All options in one Groq request first. Asked for one at a time,
+        // Groq's 8,000-tokens-a-minute free tier refused the second and third
+        // (each itinerary is ~2,300 tokens), and with the other providers down
+        // step 8 was left showing a single card. One combined answer fits in
+        // one minute's allowance. Whatever it doesn't return well-formed is
+        // filled in by the one-at-a-time loop below, through every provider.
+        $found = [];
+        $groq  = new \App\Services\GroqService();
+        try {
+            $combined = $groq->suggestItineraryOptions(
+                $dest, $tripStart, $tripEnd, $aiBudMin, $aiBudMax, $profileBudget, $interests,
+                array_values($alreadySelected),
+                array_column(self::ITINERARY_OPTION_CONSTRAINTS, 'prompt'),
+                $departTime,
+                needsAccommodation: !$this->selectedHotel && !$this->selectedMcHotel,
+                timeout: 50,
+            ) ?? [];
+        } catch (\Throwable) {
+            $combined = [];
+        }
+        foreach ($combined as $result) {
+            $i = $result['_constraint'];
+            unset($result['_constraint']);
+            $result = $this->applyDepartureCost($result);
+            $result['_optionLabel'] = self::ITINERARY_OPTION_CONSTRAINTS[$i]['label'];
+            $found[$i] = $result;
+        }
+
         foreach (self::ITINERARY_OPTION_CONSTRAINTS as $i => $option) {
+            if (isset($found[$i])) continue;
             if (microtime(true) >= $overallDeadline) break;
             if ($i > 0) usleep(600_000);
             $args = [
@@ -2353,14 +2435,18 @@ class TripPlannerWizard extends Component
                 $option['prompt'],
                 $departTime,
             ];
-            $optionDeadline = min($overallDeadline, microtime(true) + 32);
+            // 45s, up from 32s: room for Groq to wait out its per-minute token
+            // limit (often ~20s by the third option) and still answer.
+            $optionDeadline = min($overallDeadline, microtime(true) + 45);
             $result = $this->suggestItinerary($args, $optionDeadline);
             if ($result) {
                 $result['_optionLabel'] = $option['label'];
-                $this->aiItineraryOptions[] = $result;
+                $found[$i] = $result;
             }
         }
 
+        ksort($found);
+        $this->aiItineraryOptions = array_values($found);
         $this->aiItinerary = $this->aiItineraryOptions[0] ?? null;
         $this->aiLoading    = false;
     }

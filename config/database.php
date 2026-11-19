@@ -95,8 +95,25 @@ return [
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            'search_path' => 'public',
+            // No 'search_path': setting one costs an extra statement on every
+            // connect, a full round trip to the remote database. The server's
+            // own default ("$user", public, extensions) already resolves every
+            // table to public, and Laravel's schema builder falls back to
+            // 'public' when this is unset.
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // The database is a network hop away, so round trips are the cost:
+            //  - DB_PERSISTENT reuses one connection across requests instead of
+            //    a fresh TLS handshake each time (~0.4s). For the single
+            //    long-lived `php artisan serve` process; leave it off under
+            //    FPM, where every worker would hold a pooler slot.
+            //  - DISABLE_PREPARES sends each query in one round trip instead of
+            //    prepare + execute. Values still go as real bound parameters
+            //    (PQexecParams), never inlined into the SQL.
+            // array_replace rather than spread, which renumbers integer keys.
+            'options' => array_replace(
+                env('DB_PERSISTENT', false) ? [PDO::ATTR_PERSISTENT => true] : [],
+                defined('PDO::PGSQL_ATTR_DISABLE_PREPARES') ? [PDO::PGSQL_ATTR_DISABLE_PREPARES => true] : [],
+            ),
         ],
 
         'sqlsrv' => [

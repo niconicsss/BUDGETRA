@@ -151,4 +151,15 @@ class BrowserListLayoutTest extends TestCase
             ->assertSee('Tokyo')
             ->assertDontSee('Siquijor');
     }
+
+    public function test_a_tall_photo_cannot_stretch_its_row(): void
+    {
+        // A portrait photo left in flow sized its own cell, so one row came
+        // out twice as tall as the rest. Out of flow it just fills the cell.
+        foreach (['attraction' => 'attr', 'destination' => 'dst'] as $view => $prefix) {
+            $css = file_get_contents(resource_path("views/livewire/traveler/{$view}-browser.blade.php"));
+            $this->assertMatchesRegularExpression(
+                '/\.' . $prefix . '-row-media img \{[^}]*position: absolute; inset: 0;/', $css, $view);
+        }
+    }
 }

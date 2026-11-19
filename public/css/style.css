@@ -162,6 +162,17 @@ button, a, .btn, [role="button"], input[type="submit"], input[type="button"] {
 }
 button:active, .btn:active, [role="button"]:active { transform: scale(0.97); }
 button:disabled, .btn:disabled { cursor: wait; opacity: .7; }
+/* Busy from the instant of the click until the server answers.
+   data-loading: Livewire 4 puts it on whatever element started a request, so
+   every wire:click button gets this with no markup of its own. Kept to
+   buttons and links: a wire:click.self modal backdrop gets it too and must
+   not dim.
+   data-submitting: set by js/press-feedback.js on a plain form's submit
+   button.
+   pointer-events also stops a double click from sending it twice. */
+button[data-loading], a[data-loading], .btn[data-loading], [data-submitting] {
+  cursor: progress; opacity: .7; pointer-events: none;
+}
 body {
   font-family: 'Hanken Grotesk', system-ui, -apple-system, sans-serif;
   background: var(--bg);

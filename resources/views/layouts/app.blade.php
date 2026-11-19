@@ -86,6 +86,7 @@
          trip import). Outside .dash-content so nothing can clip it. --}}
     <x-toast :message="session('toast')" />
     @livewireScripts
+    <script src="{{ asset('js/press-feedback.js') }}?v={{ filemtime(public_path('js/press-feedback.js')) }}" data-navigate-once></script>
     @stack('scripts')
     @if (session()->pull('collapse_sidebar'))
     <script>

@@ -205,15 +205,17 @@
                     <span style="font-weight:700;color:var(--dark);">{{ request('category') ?: 'All Categories' }}</span>
                     <i class="fa-solid fa-chevron-down" :style="'font-size:10px;color:var(--muted);flex-shrink:0;transition:transform .15s;' + (catOpen?'transform:rotate(180deg)':'')"></i>
                 </div>
+                {{-- Options take the trip dropdowns' weights and colours (itinerary and
+                     expenses): regular grey, the current one semi-bold in primary. --}}
                 <div x-show="catOpen" @click.outside="catOpen=false" x-cloak
                      style="position:absolute;top:calc(100% + 6px);left:0;right:0;background:var(--bg-white);border:1.5px solid var(--border);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.10);z-index:200;overflow:hidden;">
                     <button type="button" @click="catOpen=false" onclick="this.form.category.value='';ajaxFilterSubmit(this.form)"
-                            style="width:100%;text-align:left;padding:11px 16px;border:none;background:none;font-size:13px;font-weight:700;cursor:pointer;{{ request('category') === null || request('category') === '' ? 'color:var(--primary);background:var(--primary-light);' : 'color:var(--dark);' }}">
+                            style="width:100%;text-align:left;padding:11px 16px;border:none;background:none;font-size:13px;cursor:pointer;{{ request('category') === null || request('category') === '' ? 'font-weight:600;color:var(--primary);background:var(--primary-light);' : 'font-weight:400;color:var(--muted);' }}">
                         All Categories
                     </button>
                     @foreach ($categories as $cat)
                     <button type="button" @click="catOpen=false" onclick="this.form.category.value='{{ $cat }}';ajaxFilterSubmit(this.form)"
-                            style="width:100%;text-align:left;padding:11px 16px;border:none;background:none;font-size:13px;font-weight:700;cursor:pointer;{{ request('category') === $cat ? 'color:var(--primary);background:var(--primary-light);' : 'color:var(--dark);' }}">
+                            style="width:100%;text-align:left;padding:11px 16px;border:none;background:none;font-size:13px;cursor:pointer;{{ request('category') === $cat ? 'font-weight:600;color:var(--primary);background:var(--primary-light);' : 'font-weight:400;color:var(--muted);' }}">
                         {{ $cat }}
                     </button>
                     @endforeach

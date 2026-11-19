@@ -54,6 +54,11 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
 .cal-day.in-range{background:var(--primary-light);color:var(--primary);}
 .cal-day.past{color:var(--muted);opacity:.35;cursor:not-allowed;}
 .pyt-budget-input::placeholder{color:#C4B8AC;font-weight:400;}
+/* The minimum budget under the budget field; red when Next is pressed below it. */
+.pyt-budget-note{display:flex;align-items:flex-start;gap:7px;margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.45;}
+.pyt-budget-note i{font-size:11px;margin-top:3px;flex-shrink:0;}
+.pyt-budget-note strong{color:var(--dark);font-weight:700;}
+.pyt-budget-note.is-bad,.pyt-budget-note.is-bad strong{color:var(--danger);}
 </style>
 
 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 24px;min-height:100%;box-sizing:border-box;">
@@ -84,10 +89,14 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
             // filled-ness has to be seeded separately for the x to know
             // whether to show on first paint.
             'budgetFilled' => trim((string) $manualBudgetMin) !== '',
+            // The smallest budget accepted, in the budget's own currency
+            // (null: no rate, nothing to enforce).
+            'minBudget'    => $this->minimumBudget(),
         ];
     @endphp
     <div wire:key="pyt-manual-card-{{ $step1VisitToken }}" x-data="pytManual(@js($pytSeed))" x-init="init()"
          @trip-details-missing.window="flagBad($event.detail.fields)"
+         @budget-too-low.window="budgetTooLow = true"
          style="background:var(--bg-white);border:1.5px solid var(--border);border-radius:24px;width:100%;max-width:720px;box-shadow:0 8px 36px rgba(45,27,20,.08);">
 
         <div style="padding:36px 36px 0;">
@@ -174,6 +183,7 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
                 // mean pesos, so a Canadian typing 3,000 got a ₱3,000 trip.
                 $budCurrencyCode   = $this->budgetCurrency();
                 $budCurrencySymbol = $this->budgetCurrencySymbol();
+                $budMinimum        = $this->minimumBudget();
             @endphp
             <div style="margin-bottom:18px;">
                 <div class="pyt-label">
@@ -205,18 +215,30 @@ $originCountryLabel = \App\Support\PlaceCatalog::originCountryFor(auth()->user()
                                $el.value = parts.length===2 ? fmt(parts[0])+' - '+fmt(parts[1]) : fmt(parts[0]);
                                if ($el.value) bad.budget = false;
                                budgetFilled = !!$el.value;
+                               budgetText = $el.value;
+                               budgetTooLow = false;
                            "
                            @change="$wire.set('manualBudgetMin', $el.value)"
                            {{-- Re-seeded on every mount (including coming back
                                 from a later step). Stored digits-only, so put the
                                 separators back rather than showing a bare 60000
                                 where the traveler typed 60,000. --}}
-                           x-init="$el.value = @js(ctype_digit((string) $manualBudgetMin) && $manualBudgetMin !== '' ? number_format((int) $manualBudgetMin) : (string) $manualBudgetMin)">
+                           x-init="$el.value = @js(ctype_digit((string) $manualBudgetMin) && $manualBudgetMin !== '' ? number_format((int) $manualBudgetMin) : (string) $manualBudgetMin); budgetText = $el.value">
                     <button type="button" class="pyt-clear" title="Clear"
                             x-show="budgetFilled" x-cloak @click.stop="clearField('budget')">
                         <i class="fa-solid fa-xmark"></i>
                     </button>
                 </div>
+                {{-- Shown only when Next is pressed with less than the smallest
+                     budget accepted: ₱10,000 in the traveller's own currency
+                     (minimumBudget()). Nothing to show when no rate is
+                     available, since there is then no minimum to enforce. --}}
+                @if ($budMinimum !== null)
+                <div class="pyt-budget-note is-bad" x-show="budgetTooLow" x-cloak>
+                    <i class="fa-solid fa-circle-exclamation"></i>
+                    <span>Your budget must be at least <strong>{{ $budCurrencySymbol }}{{ number_format($budMinimum) }}</strong>.</span>
+                </div>
+                @endif
             </div>
 
             {{-- TRAVEL DATES — two separate fields --}}
@@ -329,6 +351,11 @@ window.pytManual = function (seed) {
         fromSearch: '',
         toSearch:   '',
         budgetFilled: seed.budgetFilled === true,
+        // What the budget field shows, kept in step with it, and whether the
+        // last Next was refused for a budget under the minimum.
+        budgetText: '',
+        minBudget: seed.minBudget ?? null,
+        budgetTooLow: false,
         startLabel: seed.startLabel || '',
         endLabel:   seed.endLabel   || '',
         startVal:   seed.startVal   || '',
@@ -378,6 +405,8 @@ window.pytManual = function (seed) {
             if (which === 'budget') {
                 if (this.$refs.budgetInput) this.$refs.budgetInput.value = '';
                 this.budgetFilled = false;
+                this.budgetText = '';
+                this.budgetTooLow = false;
                 this.$wire.set('manualBudgetMin', '');
             }
             if (which === 'start')  { this.startVal = ''; this.startLabel = ''; this.$wire.set('startDate', ''); }
@@ -395,6 +424,15 @@ window.pytManual = function (seed) {
             return String(this.$refs.budgetInput?.value ?? '').replace(/[^0-9]/g, '');
         },
 
+        // The smallest amount typed: the bottom of a "min - max" range, or
+        // the single amount. It is what has to reach the minimum budget.
+        budgetLowest() {
+            const amounts = String(this.$refs.budgetInput?.value ?? '').split('-')
+                .map(p => parseInt(p.replace(/[^0-9]/g, ''), 10))
+                .filter(n => !isNaN(n));
+            return amounts.length ? Math.min(...amounts) : 0;
+        },
+
         submitTripDetails() {
             // Checked here rather than on the server: the answer is already
             // known client-side, and a Livewire round trip would put ~500ms
@@ -406,6 +444,14 @@ window.pytManual = function (seed) {
             if (!this.startVal)      missing.push('start');
             if (!this.endVal)        missing.push('end');
             if (missing.length) { this.flagBad(missing); return; }
+
+            // Under the minimum budget: red field and the note under it says
+            // so, without a round trip. proceedFromTripDetails() checks again.
+            if (this.minBudget && this.budgetLowest() < this.minBudget) {
+                this.budgetTooLow = true;
+                this.flagBad(['budget']);
+                return;
+            }
 
             // The budget input only syncs on 'change'. Set it deferred (live
             // = false) so it rides along on proceedFromTripDetails' own
@@ -2361,7 +2407,7 @@ window.sortAttractions = function(dir) {
      The 40px it occupies (20px padding + the line) comes off the block's
      min-height below, so the two still add up to the 100vh - 120px this
      step has always been and the page gains no scrollbar. --}}
-<div style="padding:20px 24px 0;">
+<div style="padding:0 0 20px;">
     {{-- The one step that had no way back. backFromEdit() handles the AI-edit
          case by returning to the AI planner instead of step 5. --}}
     <button wire:click="backFromEdit(5)" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;padding:0;">
@@ -2536,7 +2582,7 @@ window.sortAttractions = function(dir) {
      The 40px it occupies (20px padding + the line) comes off the block's
      min-height below, so the two still add up to the 100vh - 120px this
      step has always been and the page gains no scrollbar. --}}
-<div style="padding:20px 24px 0;">
+<div style="padding:0 0 20px;">
     <button wire:click="backFromEdit(6)" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;padding:0;">
         <i class="fa-solid fa-arrow-left" style="font-size:11px;"></i> Back to Emergency Fund
     </button>
@@ -2844,10 +2890,12 @@ window.sortAttractions = function(dir) {
 @endphp
 
 <style>
-.itin8-wrap{padding:20px 0;display:flex;flex-direction:column;min-height:calc(100vh - 140px);}
+.itin8-wrap{padding:0 0 20px;display:flex;flex-direction:column;min-height:calc(100vh - 140px);}
 
 /* Top bar */
-.itin8-topbar{background:transparent;border:none;padding:0;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+/* flex-start, not center: centred against the taller cost card on the right,
+   the back link sat lower than "Back to Flights" and the other steps' links. */
+.itin8-topbar{background:transparent;border:none;padding:0;margin-bottom:20px;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;}
 .itin8-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;}
 .itin8-tag{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--muted);line-height:16px;}
 .itin8-tag i{font-size:9px;color:var(--muted);}
@@ -3076,96 +3124,141 @@ window.sortAttractions = function(dir) {
     ];
     @endphp
 
-    {{-- Pricing-tier-style comparison: one vertical card per option, laid
-         out side by side. Each card lists the traveler's own selections
-         (same across every card) plus that option's AI-suggested day themes
-         — tailored to the traveler's profile interests, destination, and
-         budget from earlier in the wizard. --}}
-    @if(count($optionsToRender) > 1)
+    {{-- Plan cards, laid out like a pricing flyer: one card per generated
+         option, side by side, each with its total cost up top and the whole
+         day-by-day itinerary underneath. Click a card to choose it; that
+         option is what the cost summary and Save read from.
+
+         Each card's total is the full trip, not just the AI part: the
+         traveler's own picks (flight, hotel, venues, attractions, custom
+         activities) are the same in every option, so they are the
+         $totalCost8 base less the currently selected option's AI share. That
+         keeps the selected card's figure equal to Estimated Cost above. --}}
+    @if(count($optionsToRender) >= 1)
     @php
-        // Sort cheapest → most expensive while keeping each option's original
-        // index (selectItineraryOption() indexes into aiItineraryOptions, so
-        // the display order can't change which index gets sent on click).
-        $optCosts = [];
-        foreach ($optionsToRender as $idx => $opt) {
+        $aiCostOf8 = function (?array $itin): float {
             $c = 0;
-            foreach ($opt['days'] ?? [] as $d) {
+            foreach ($itin['days'] ?? [] as $d) {
                 foreach ($d['activities'] ?? [] as $a) {
                     if (isset($a['cost']) && is_numeric($a['cost'])) $c += (float) $a['cost'];
                 }
             }
-            $optCosts[$idx] = $c;
-        }
+            return $c;
+        };
+        $selBase8 = $totalCost8 - $aiCostOf8($aiItinerary);
+
+        // Cheapest first, keeping each option's own index:
+        // selectItineraryOption() indexes into aiItineraryOptions, so the
+        // display order can't change which index a click sends.
+        $optCosts = [];
+        foreach ($optionsToRender as $idx => $opt) $optCosts[$idx] = $aiCostOf8($opt);
         asort($optCosts);
     @endphp
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));grid-auto-rows:1fr;gap:16px;margin-bottom:28px;align-items:stretch;flex:1;min-height:0;">
+    <style>
+    .itin8-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;align-items:stretch;margin-bottom:24px;}
+    .itin8-plan{display:flex;flex-direction:column;min-width:0;background:var(--bg-white);border:1.5px solid var(--border);border-radius:18px;overflow:hidden;cursor:pointer;box-shadow:0 4px 16px rgba(45,27,20,0.06);transition:box-shadow .2s,transform .2s,border-color .2s;}
+    .itin8-plan:hover{transform:translateY(-3px);box-shadow:0 14px 32px rgba(45,27,20,0.12);}
+    .itin8-plan.is-active{border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 22%,transparent),0 14px 32px rgba(45,27,20,0.12);}
+    .itin8-plan-price{padding:16px 18px 14px;text-align:center;border-bottom:1.5px dashed var(--border);}
+    .itin8-plan-price-label{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+    .itin8-plan-price-val{font-size:30px;font-weight:800;color:var(--primary);line-height:1.15;margin:4px 0 8px;letter-spacing:-0.01em;}
+    .itin8-plan-days{padding:14px 18px 6px;display:flex;flex-direction:column;gap:14px;flex:1;}
+    .itin8-plan-day-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;}
+    .itin8-plan-day-num{width:22px;height:22px;border-radius:99px;background:var(--primary);color:#fff;font-size:11px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;}
+    .itin8-plan-day-label{font-size:13px;font-weight:700;color:var(--dark);line-height:1.3;min-width:0;}
+    .itin8-plan-day-date{margin-left:auto;font-size:9.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+    .itin8-plan-acts{list-style:none;margin:0;padding:0 0 0 30px;display:flex;flex-direction:column;gap:5px;}
+    .itin8-plan-act{display:flex;align-items:flex-start;gap:7px;font-size:12px;line-height:1.4;color:var(--dark);}
+    .itin8-plan-act .material-symbols-outlined{font-size:14px;margin-top:1px;flex-shrink:0;}
+    .itin8-plan-act-time{flex-shrink:0;min-width:56px;font-size:11px;font-weight:600;color:var(--muted);}
+    .itin8-plan-act-title{flex:1;min-width:0;}
+    .itin8-plan-act-cost{flex-shrink:0;font-weight:700;color:var(--primary);white-space:nowrap;}
+    .itin8-plan-act-cost.is-free{color:#22A06B;}
+    .itin8-plan-act-remove{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:0 2px;flex-shrink:0;}
+    .itin8-plan-act-remove:hover{color:var(--danger);}
+    .itin8-plan-empty{font-size:12px;color:var(--muted);font-style:italic;}
+    .itin8-plan-foot{padding:14px 18px 18px;}
+    .itin8-plan-select{width:100%;padding:11px 0;border-radius:11px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;background:var(--bg-white);color:var(--primary);border:1.5px solid var(--primary);display:inline-flex;align-items:center;justify-content:center;gap:7px;}
+    .itin8-plan.is-active .itin8-plan-select{background:var(--primary);color:#fff;}
+    </style>
+    <div class="itin8-plans">
         @foreach($optCosts as $optIdx => $optCost)
         @php
-            $opt            = $optionsToRender[$optIdx];
-            $optDaysPreview = $buildAllDays($opt);
-            // The generator's own variant names ("Balanced Mix", "Adventure
-            // Focus", "Budget Friendly") are no longer shown -- they described
-            // the prompt that produced the option, not anything the traveler
-            // can verify in the plan itself. The cards are ordered by cost, so
-            // number them in the order they appear rather than by $optIdx,
-            // which is the pre-sort position.
-            $optLabel       = 'Option ' . $loop->iteration;
+            $optDaysPreview = $buildAllDays($optionsToRender[$optIdx]);
             $optActive      = $selectedItineraryIndex === $optIdx;
+            $optTotal       = $selBase8 + $optCost;
+            $optOver        = $budMax8 > 0 && $optTotal > $budMax8;
+            $optUnder       = $budMin8 > 0 && $optTotal < $budMin8;
         @endphp
-        <div wire:click="selectItineraryOption({{ $optIdx }})"
-             style="cursor:pointer;border-radius:18px;padding:22px 20px;display:flex;flex-direction:column;min-height:420px;overflow-y:auto;transition:box-shadow .2s,transform .2s;
-                    {{ $optActive ? 'background:var(--primary-light);border:1.5px solid var(--primary);' : 'background:var(--bg-white);border:1.5px solid var(--border);' }}"
-             onmouseenter="if(!{{ $optActive ? 'true' : 'false' }}){this.style.boxShadow='0 10px 28px rgba(45,27,20,0.10)';this.style.transform='translateY(-2px)';}"
-             onmouseleave="if(!{{ $optActive ? 'true' : 'false' }}){this.style.boxShadow='none';this.style.transform='none';}">
+        <div class="itin8-plan {{ $optActive ? 'is-active' : '' }}" wire:key="itin8-plan-{{ $optIdx }}"
+             wire:click="selectItineraryOption({{ $optIdx }})">
+            {{-- No "Option N" band or dates on top: the cost leads the card.
+                 The trip dates are already in the bar above, and each day
+                 below carries its own date. --}}
+            <div class="itin8-plan-price">
+                <div class="itin8-plan-price-label">Total Est. Cost</div>
+                <div class="itin8-plan-price-val">{{ $this->tripDisplayAmount($optTotal) }}</div>
+                <span class="itin8-budget-status {{ $optOver ? 'over' : ($optUnder ? 'under' : 'on') }}" style="margin-bottom:0;">
+                    {{ $optOver ? 'Over Budget' : ($optUnder ? 'Under Budget' : 'On Budget') }}
+                </span>
+            </div>
 
-            {{-- Header --}}
-            <div style="font-size:13px;font-weight:700;color:{{ $optActive ? 'var(--primary)' : 'var(--dark)' }};margin-bottom:2px;">{{ $optLabel }}</div>
-            <div style="font-size:11px;color:var(--muted);margin-bottom:14px;">{{ $sd8 }} – {{ $ed8 }}</div>
-            <div style="font-size:26px;font-weight:800;color:var(--primary);line-height:1.1;margin-bottom:14px;">{{ $this->tripDisplayAmount($optCost) }}</div>
-
-            <button type="button" style="width:100%;padding:9px 0;border-radius:10px;font-size:12px;font-weight:700;cursor:pointer;margin-bottom:18px;font-family:'Hanken Grotesk',sans-serif;transition:background .18s;
-                           {{ $optActive ? 'background:var(--primary);color:#fff;border:none;' : 'background:var(--bg-white);color:var(--primary);border:1.5px solid var(--primary);' }}">
-                {{ $optActive ? 'Selected' : 'Select This Option' }}
-            </button>
-
-            {{-- Traveler's own selections — same across every option --}}
-            @if(!empty($selCardsWithPicks))
-            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">Your Selections</div>
-            <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px;">
-                @foreach($selCardsWithPicks as $sc8)
-                <div style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--muted);line-height:1.4;">
-                    <i class="fa-solid fa-check" style="color:#22C55E;font-size:10px;margin-top:3px;flex-shrink:0;"></i>
-                    <span>{{ $sc8['title'] }}</span>
+            <div class="itin8-plan-days">
+                @foreach($optDaysPreview as $dp)
+                @php
+                    $dpNum  = $dp['day'] ?? $loop->iteration;
+                    $dpDate = $startDate ? strtoupper(\Carbon\Carbon::parse($startDate)->addDays($dpNum - 1)->format('M j')) : '';
+                @endphp
+                <div class="itin8-plan-day">
+                    <div class="itin8-plan-day-head">
+                        <span class="itin8-plan-day-num">{{ $dpNum }}</span>
+                        {{-- "Day N" rather than the AI's own day themes ("Budget
+                             Arrival", "Full Throttle Surf"): plain and the same
+                             across every card, so days line up for comparing. --}}
+                        <span class="itin8-plan-day-label">Day {{ $dpNum }}</span>
+                        @if($dpDate)<span class="itin8-plan-day-date">{{ $dpDate }}</span>@endif
+                    </div>
+                    <ul class="itin8-plan-acts">
+                        @forelse($dp['activities'] ?? [] as $act)
+                        @php
+                            $msInfo  = $typeToMs[$act['type'] ?? 'default'] ?? $typeToMs['default'];
+                            $actCost = $act['cost'] ?? null;
+                        @endphp
+                        <li class="itin8-plan-act">
+                            <span class="material-symbols-outlined" style="color:{{ $msInfo['color'] }};">{{ $msInfo['icon'] }}</span>
+                            @if(!empty($act['time']))<span class="itin8-plan-act-time">{{ $act['time'] }}</span>@endif
+                            <span class="itin8-plan-act-title">{{ $act['title'] ?? ($act['name'] ?? '') }}</span>
+                            @if($act['isFree'] ?? false)
+                                <span class="itin8-plan-act-cost is-free">FREE</span>
+                            @elseif(is_numeric($actCost) && $actCost > 0)
+                                <span class="itin8-plan-act-cost">{{ $this->tripDisplayAmount((float) $actCost) }}</span>
+                            @endif
+                            @if($act['isCustom'] ?? false)
+                            <button type="button" class="itin8-plan-act-remove" title="Remove"
+                                    wire:click.stop="removeCustomActivity({{ $act['customIndex'] }})"><i class="fa-solid fa-xmark"></i></button>
+                            @endif
+                        </li>
+                        @empty
+                        <li class="itin8-plan-empty">Free day</li>
+                        @endforelse
+                    </ul>
                 </div>
                 @endforeach
             </div>
-            @endif
 
-            {{-- AI-suggested days for this specific option --}}
-            <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;">AI Suggested</div>
-            <div style="display:flex;flex-direction:column;gap:6px;">
-                @foreach($optDaysPreview as $dpItem)
-                @if(!($dpItem['isUserDay'] ?? false))
-                @php
-                    $dpNum   = $dpItem['day'] ?? ($loop->iteration);
-                    $dpLabel = $dpItem['label'] ?? ('Day ' . $dpNum);
-                @endphp
-                <div style="display:flex;align-items:flex-start;gap:7px;font-size:12px;color:var(--muted);line-height:1.4;">
-                    <i class="fa-solid fa-sparkles" style="color:var(--primary);font-size:10px;margin-top:3px;flex-shrink:0;"></i>
-                    <span><strong style="color:var(--dark);">Day {{ $dpNum }}:</strong> {{ $dpLabel }}</span>
-                </div>
-                @endif
-                @endforeach
+            <div class="itin8-plan-foot">
+                <button type="button" class="itin8-plan-select">
+                    @if($optActive)<i class="fa-solid fa-check" style="font-size:11px;"></i> Selected @else Select This Option @endif
+                </button>
             </div>
         </div>
         @endforeach
     </div>
     @endif
 
-    {{-- Single-option fallback (e.g. only one option ever generated) — the
-         cards grid above only renders when there's more than one, so show
-         the full day-by-day breakdown here in that edge case. --}}
-    @if(count($optionsToRender) <= 1)
+    {{-- No AI option came back: the traveler's own selections still get the
+         day-by-day board, so the trip can be reviewed and saved. --}}
+    @if(count($optionsToRender) === 0)
     @php
         $selectedOption = $optionsToRender[$selectedItineraryIndex] ?? ($optionsToRender[0] ?? null);
         $optDays        = $buildAllDays($selectedOption);
@@ -3236,6 +3329,7 @@ window.sortAttractions = function(dir) {
         </div>
         @endforeach
     </div>
+    @endif
 
     {{-- Add Custom Activity button --}}
     <div style="display:flex;justify-content:center;padding-top:4px;">
@@ -3243,7 +3337,6 @@ window.sortAttractions = function(dir) {
             <span class="material-symbols-outlined" style="font-size:16px;">add</span> Add Custom Activity
         </button>
     </div>
-    @endif
 
     {{-- Add Custom Activity modal --}}
     @if($showCustomActivityModal)
@@ -3430,10 +3523,11 @@ window.sortAttractions = function(dir) {
      margins this used to carry centred the whole step once the content area
      grew past 1200px, which pushed the back link inwards on a wide monitor
      while the itinerary step's stayed pinned to the left. --}}
-<div style="padding:20px 0;">
+<div style="padding:0 0 20px;">
 
-    {{-- Header --}}
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+    {{-- Header. flex-start, not center: centred against the taller Confirm
+         Trip button, the back link sat lower than on every other step. --}}
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
         <button wire:click="$set('step', 8)" style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;padding:0;">
             <i class="fa-solid fa-arrow-left" style="font-size:11px;"></i> Back to Suggested Itineraries
         </button>

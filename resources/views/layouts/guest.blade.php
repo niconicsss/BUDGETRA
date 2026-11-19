@@ -14,5 +14,6 @@
 </head>
 <body class="auth-body">
     @yield('content')
+    <script src="{{ asset('js/press-feedback.js') }}?v={{ filemtime(public_path('js/press-feedback.js')) }}"></script>
 </body>
 </html>
